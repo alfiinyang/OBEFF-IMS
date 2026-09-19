@@ -1,0 +1,16 @@
+{
+  "name": "OBEFF IMS - Family Heritage & Records",
+  "short_name": "OBEFF IMS",
+  "description": "Private, secure family lineage tree and announcement network",
+  "start_url": "/feed",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#10b981",
+  "icons": [
+    {
+      "src": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=192&auto=format&fit=crop&q=80",
+      "sizes": "192x192",
+      "type": "image/png"
+    }
+  ]
+}
