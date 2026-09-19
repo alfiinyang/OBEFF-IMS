@@ -7,7 +7,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 export default function AdminSwitcher() {
-  const { currentUser, switchDemoRole } = useFamily();
+  const { currentUser, switchDemoRole, resetLocalDatabase } = useFamily();
   const pathname = usePathname();
   const isAdmin = ['Admin', 'Super-Admin'].includes(currentUser.role);
   const isInAdminPortal = pathname.startsWith('/admin');
@@ -48,6 +48,18 @@ export default function AdminSwitcher() {
           }`}
         >
           Super-Admin
+        </button>
+        <button
+          onClick={async () => {
+            if (confirm('Reset local database back to initial seed data?')) {
+              await resetLocalDatabase();
+              alert('Local test database reset successfully!');
+            }
+          }}
+          title="Reset Local Test Database"
+          className="px-2 py-1 text-slate-400 hover:text-rose-600 transition font-medium"
+        >
+          Reset DB
         </button>
       </div>
 

@@ -46,6 +46,7 @@ interface FamilyContextType {
   updateUserStatus: (userId: string, newStatus: UserStatus) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => void;
   switchDemoRole: (role: UserRole) => void;
+  resetLocalDatabase: () => Promise<void>;
 }
 
 const FamilyContext = createContext<FamilyContextType | undefined>(undefined);
@@ -73,6 +74,73 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       setPreferences(INITIAL_PREFERENCES[currentUser.id]);
     }
   }, [currentUser.id]);
+
+  // Hydrate from localStorage or local database on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('obeff_local_db');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed.profiles) setProfiles(parsed.profiles);
+          if (parsed.posts) setPosts(parsed.posts);
+          if (parsed.lineage_edges) setLineageEdges(parsed.lineage_edges);
+          if (parsed.notifications) setNotifications(parsed.notifications);
+          if (parsed.audit_logs) setAuditLogs(parsed.audit_logs);
+        } catch (e) {}
+      } else {
+        fetch('/api/db')
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.profiles && data.profiles.length > 0) {
+              setProfiles(data.profiles);
+              setPosts(data.posts);
+              setLineageEdges(data.lineage_edges);
+              setNotifications(data.notifications);
+              setAuditLogs(data.audit_logs);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, []);
+
+  // Persist to localStorage and local file database on changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stateToPersist = {
+        profiles,
+        lineage_edges: lineageEdges,
+        posts,
+        notifications,
+        preferences: INITIAL_PREFERENCES,
+        audit_logs: auditLogs,
+      };
+      try {
+        localStorage.setItem('obeff_local_db', JSON.stringify(stateToPersist));
+        fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(stateToPersist),
+        }).catch(() => {});
+      } catch (e) {}
+    }
+  }, [profiles, lineageEdges, posts, notifications, auditLogs]);
+
+  const resetLocalDatabase = async () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('obeff_local_db');
+    }
+    try {
+      await fetch('/api/db', { method: 'DELETE' });
+    } catch (e) {}
+    setProfiles(INITIAL_PROFILES);
+    setPosts(INITIAL_POSTS);
+    setLineageEdges(INITIAL_LINEAGE);
+    setNotifications(INITIAL_NOTIFICATIONS);
+    setAuditLogs(INITIAL_AUDIT_LOGS);
+    setCurrentUser(INITIAL_PROFILES[2]);
+  };
 
   const userNotifications = notifications.filter((n) => n.recipient_id === currentUser.id);
   const unreadNotificationCount = userNotifications.filter((n) => !n.is_read).length;
@@ -495,6 +563,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         updateUserStatus,
         updateProfile,
         switchDemoRole,
+        resetLocalDatabase,
       }}
     >
       {children}

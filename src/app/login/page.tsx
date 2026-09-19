@@ -47,16 +47,28 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="max-w-md mx-auto my-8 bg-white rounded-3xl p-8 border border-slate-200 shadow-sm">
-      <div className="text-center mb-8">
-        <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-3">
-          <Shield className="w-6 h-6" />
+    <div className="min-h-[85vh] flex flex-col items-center justify-center py-6 sm:py-10 px-4">
+      <div className="max-w-md w-full bg-white rounded-3xl p-7 sm:p-9 border border-slate-200/90 shadow-lg">
+        {/* Return to Entry Portal */}
+        <div className="mb-4">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-emerald-700 transition"
+          >
+            <ArrowRight className="w-3.5 h-3.5 rotate-180" />
+            <span>Back to Welcome Page</span>
+          </Link>
         </div>
-        <h1 className="text-2xl font-bold text-slate-900">Sign in to OBEFF IMS</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Private Heritage, Lineage Tree & Family Communications
-        </p>
-      </div>
+
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-3">
+            <Shield className="w-6 h-6" />
+          </div>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight">Sign in to OBEFF IMS</h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Private Heritage, Lineage Tree & Family Communications
+          </p>
+        </div>
 
       {error && (
         <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-2xl text-xs text-rose-700 font-medium">
@@ -164,5 +176,6 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  </div>
   );
 }

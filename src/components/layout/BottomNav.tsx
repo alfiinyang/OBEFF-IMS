@@ -8,8 +8,8 @@ import { Home, GitFork, Users, BookOpen, User } from 'lucide-react';
 export default function BottomNav() {
   const pathname = usePathname();
 
-  // Hide bottom nav on auth screens or admin portal
-  if (['/login', '/signup', '/pending'].includes(pathname) || pathname.startsWith('/admin')) {
+  // Hide bottom nav on auth screens, landing page, or admin portal
+  if (['/', '/login', '/signup', '/pending'].includes(pathname) || pathname.startsWith('/admin')) {
     return null;
   }
 
