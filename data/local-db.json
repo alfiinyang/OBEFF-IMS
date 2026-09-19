@@ -116,12 +116,26 @@
     {
       "id": "post-001",
       "author_id": "user-001",
+      "author": {
+        "id": "user-001",
+        "family_id": "OBEFF-00101",
+        "email": "elder.obeff@family.org",
+        "first_name": "Eteidung",
+        "last_name": "Obeff",
+        "phone": "+234 803 111 2222",
+        "address": "14 Heritage Boulevard, Calabar, Nigeria",
+        "date_of_birth": "1948-04-12",
+        "role": "Super-Admin",
+        "status": "Active",
+        "avatar_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+        "created_at": "2026-01-01T10:00:00Z"
+      },
       "content": "🕊️ Official Family Announcement: The Annual OBEFF General Assembly and Thanksgiving will take place on December 28th, 2026. All diaspora branches are encouraged to submit their delegate lists by November 15th. Full schedule attached below.",
       "media_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
       "is_admin_announcement": true,
       "is_pinned": true,
       "likes_count": 24,
-      "comments_count": 2,
+      "comments_count": 5,
       "has_liked": true,
       "created_at": "2026-09-15T08:00:00Z",
       "comments": [
@@ -129,6 +143,20 @@
           "id": "c-1",
           "post_id": "post-001",
           "author_id": "user-003",
+          "author": {
+            "id": "user-003",
+            "family_id": "OBEFF-00103",
+            "email": "dr.edet@family.org",
+            "first_name": "Dr. Edet",
+            "last_name": "Obeff",
+            "phone": "+234 805 555 6666",
+            "address": "8 Marina Road, Lagos, Nigeria",
+            "date_of_birth": "1975-06-18",
+            "role": "Admin",
+            "status": "Active",
+            "avatar_url": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
+            "created_at": "2026-01-05T09:30:00Z"
+          },
           "content": "Noted with thanks, Father. The Lagos branch is coordinating travel plans.",
           "created_at": "2026-09-15T09:30:00Z"
         },
@@ -136,6 +164,20 @@
           "id": "c-2",
           "post_id": "post-001",
           "author_id": "user-004",
+          "author": {
+            "id": "user-004",
+            "family_id": "OBEFF-00104",
+            "email": "kufre.obeff@family.org",
+            "first_name": "Kufre",
+            "last_name": "Obeff",
+            "phone": "+44 7700 900123",
+            "address": "22 Kensington High St, London, UK",
+            "date_of_birth": "1998-11-04",
+            "role": "Member",
+            "status": "Active",
+            "avatar_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+            "created_at": "2026-01-10T14:15:00Z"
+          },
           "content": "Looking forward to seeing everyone in December! UK flight booked.",
           "created_at": "2026-09-15T11:45:00Z"
         }
@@ -144,12 +186,26 @@
     {
       "id": "post-002",
       "author_id": "user-004",
+      "author": {
+        "id": "user-004",
+        "family_id": "OBEFF-00104",
+        "email": "kufre.obeff@family.org",
+        "first_name": "Kufre",
+        "last_name": "Obeff",
+        "phone": "+44 7700 900123",
+        "address": "22 Kensington High St, London, UK",
+        "date_of_birth": "1998-11-04",
+        "role": "Member",
+        "status": "Active",
+        "avatar_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+        "created_at": "2026-01-10T14:15:00Z"
+      },
       "content": "Just received my Masters in Artificial Intelligence from Imperial College London! Immensely grateful for all the prayers and support from the entire OBEFF family. Here is a short highlight reel from graduation day! 🎓🎉",
       "media_url": "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&auto=format&fit=crop&q=80",
       "is_admin_announcement": false,
       "is_pinned": false,
       "likes_count": 38,
-      "comments_count": 1,
+      "comments_count": 8,
       "has_liked": false,
       "created_at": "2026-09-18T14:20:00Z",
       "comments": [
@@ -157,6 +213,20 @@
           "id": "c-3",
           "post_id": "post-002",
           "author_id": "user-001",
+          "author": {
+            "id": "user-001",
+            "family_id": "OBEFF-00101",
+            "email": "elder.obeff@family.org",
+            "first_name": "Eteidung",
+            "last_name": "Obeff",
+            "phone": "+234 803 111 2222",
+            "address": "14 Heritage Boulevard, Calabar, Nigeria",
+            "date_of_birth": "1948-04-12",
+            "role": "Super-Admin",
+            "status": "Active",
+            "avatar_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+            "created_at": "2026-01-01T10:00:00Z"
+          },
           "content": "Hearty congratulations, my grandson! You make the entire lineage proud.",
           "created_at": "2026-09-18T15:00:00Z"
         }
@@ -183,6 +253,26 @@
       "action_url": "/admin/approvals",
       "is_read": false,
       "created_at": "2026-09-18T16:10:00Z"
+    },
+    {
+      "id": "notif-003",
+      "recipient_id": "user-004",
+      "type": "Announcement",
+      "title": "New Official Announcement",
+      "message": "Eteidung Obeff pinned: Annual OBEFF General Assembly & Thanksgiving.",
+      "action_url": "/feed",
+      "is_read": true,
+      "created_at": "2026-09-15T08:00:00Z"
+    },
+    {
+      "id": "notif-004",
+      "recipient_id": "user-004",
+      "type": "Engagement",
+      "title": "New Comment on Your Post",
+      "message": "Eteidung Obeff commented on your graduation update.",
+      "action_url": "/feed",
+      "is_read": false,
+      "created_at": "2026-09-18T15:00:00Z"
     }
   ],
   "preferences": {
@@ -230,6 +320,19 @@
         "family_id": "OBEFF-00104"
       },
       "created_at": "2026-01-10T15:00:00Z"
+    },
+    {
+      "id": "log-003",
+      "admin_id": "user-001",
+      "admin_name": "Eteidung Obeff",
+      "target_user_id": "user-004",
+      "target_user_name": "Kufre Obeff",
+      "action_type": "LINEAGE_APPROVED",
+      "metadata": {
+        "relation": "Father",
+        "parent": "Dr. Edet Obeff"
+      },
+      "created_at": "2026-01-10T15:02:00Z"
     }
   ]
 }

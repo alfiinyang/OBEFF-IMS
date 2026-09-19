@@ -42,6 +42,14 @@ interface FamilyContextType {
   rejectLineage: (edgeId: string, notes?: string) => Promise<void>;
   approveUser: (userId: string) => Promise<void>;
   rejectUser: (userId: string, reason?: string) => Promise<void>;
+  registerUser: (userData: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    address: string;
+    date_of_birth: string;
+  }) => Promise<UserProfile>;
   updateUserRole: (userId: string, newRole: UserRole) => Promise<void>;
   updateUserStatus: (userId: string, newStatus: UserStatus) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => void;
@@ -460,6 +468,72 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const registerUser = async (userData: {
+    first_name: string;
+    last_name: string;
+    email: string;
+    phone: string;
+    address: string;
+    date_of_birth: string;
+  }): Promise<UserProfile> => {
+    const newFamilyId = `OBEFF-00${profiles.length + 101}`;
+    const newApplicant: UserProfile = {
+      id: `user-${Date.now()}`,
+      family_id: newFamilyId,
+      email: userData.email,
+      first_name: userData.first_name,
+      last_name: userData.last_name,
+      phone: userData.phone,
+      address: userData.address,
+      date_of_birth: userData.date_of_birth,
+      role: 'Member',
+      status: 'Pending',
+      avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
+      created_at: new Date().toISOString(),
+    };
+
+    const updatedProfiles = [...profiles, newApplicant];
+    setProfiles(updatedProfiles);
+
+    // Notify all active Admins in-app and by email
+    const activeAdmins = updatedProfiles.filter(
+      (p) => ['Admin', 'Super-Admin'].includes(p.role) && p.status === 'Active'
+    );
+    const adminNotifs = await notifyAdminsApprovalRequired(
+      activeAdmins,
+      newApplicant,
+      'NEW_REGISTRATION',
+      `New family member registration submitted for ${newApplicant.first_name} ${newApplicant.last_name} (${newApplicant.phone}).`
+    );
+
+    const updatedNotifications = [...notifications, ...adminNotifs];
+    setNotifications(updatedNotifications);
+
+    // Sync to localStorage and /api/db immediately
+    if (typeof window !== 'undefined') {
+      const stateToPersist = {
+        profiles: updatedProfiles,
+        lineage_edges: lineageEdges,
+        posts,
+        notifications: updatedNotifications,
+        preferences: INITIAL_PREFERENCES,
+        audit_logs: auditLogs,
+      };
+      localStorage.setItem('obeff_local_db', JSON.stringify(stateToPersist));
+      try {
+        await fetch('/api/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(stateToPersist),
+        });
+      } catch (e) {
+        console.error('Failed to sync to local DB API:', e);
+      }
+    }
+
+    return newApplicant;
+  };
+
   const updateUserRole = async (userId: string, newRole: UserRole) => {
     const user = profiles.find((p) => p.id === userId);
     if (!user) return;
@@ -559,6 +633,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         rejectLineage,
         approveUser,
         rejectUser,
+        registerUser,
         updateUserRole,
         updateUserStatus,
         updateProfile,

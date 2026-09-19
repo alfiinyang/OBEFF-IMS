@@ -4,58 +4,67 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useFamily } from '@/lib/state-context';
-import { notifyAdminsApprovalRequired } from '@/lib/notifications';
 import CountryPhoneInput from '@/components/ui/CountryPhoneInput';
-import { ShieldCheck, ArrowRight, Lock, Mail, MapPin, Calendar, User, ArrowLeft } from 'lucide-react';
-import { UserProfile } from '@/types';
+import { ShieldCheck, ArrowRight, Lock, Mail, MapPin, Calendar, User, ArrowLeft, AlertCircle } from 'lucide-react';
 
 export default function SignupPage() {
   const router = useRouter();
-  const { profiles } = useFamily();
+  const { registerUser } = useFamily();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     email: '',
     password: '',
+    confirmPassword: '',
     countryCode: '+234',
     phoneNumber: '',
     dateOfBirth: '',
     address: '',
   });
+  const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+
+    // Password verification
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match. Please ensure both passwords are identical.');
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (!formData.phoneNumber.trim()) {
+      setError('Please provide a valid phone number.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     const fullPhoneNumber = `${formData.countryCode} ${formData.phoneNumber.trim()}`;
 
-    const newApplicant: UserProfile = {
-      id: `user-${Date.now()}`,
-      family_id: `OBEFF-00${profiles.length + 101}`,
-      email: formData.email,
-      first_name: formData.firstName,
-      last_name: formData.lastName,
-      phone: fullPhoneNumber,
-      address: formData.address,
-      date_of_birth: formData.dateOfBirth,
-      role: 'Member',
-      status: 'Pending',
-      avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-      created_at: new Date().toISOString(),
-    };
+    try {
+      // Register applicant directly in state context & local database
+      await registerUser({
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        email: formData.email,
+        phone: fullPhoneNumber,
+        address: formData.address,
+        date_of_birth: formData.dateOfBirth,
+      });
 
-    // Notify all active admins in-app and by email (PRD mandatory requirement)
-    const admins = profiles.filter((p) => ['Admin', 'Super-Admin'].includes(p.role) && p.status === 'Active');
-    await notifyAdminsApprovalRequired(
-      admins,
-      newApplicant,
-      'NEW_REGISTRATION',
-      `New family member submitted registration details for ${formData.firstName} ${formData.lastName} (${fullPhoneNumber}).`
-    );
-
-    setIsSubmitting(false);
-    router.push('/pending');
+      setIsSubmitting(false);
+      router.push('/pending');
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setError(err?.message || 'Failed to submit registration. Please try again.');
+    }
   };
 
   return (
@@ -83,6 +92,13 @@ export default function SignupPage() {
             Please provide your verified details. Fields marked with <span className="text-red-500 font-bold">*</span> are required for identity and lineage authentication.
           </p>
         </div>
+
+        {error && (
+          <div className="mb-4 p-3.5 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-medium flex items-center gap-2 animate-in fade-in">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-600" />
+            <span>{error}</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           
@@ -137,21 +153,40 @@ export default function SignupPage() {
             </div>
           </div>
 
-          {/* Password */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Password <span className="text-red-500 font-bold">*</span>
-            </label>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="password"
-                required
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                placeholder="Create a secure password"
-                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
-              />
+          {/* Password & Confirm Password Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Password <span className="text-red-500 font-bold">*</span>
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="password"
+                  required
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Create password"
+                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Confirm Password <span className="text-red-500 font-bold">*</span>
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="password"
+                  required
+                  value={formData.confirmPassword}
+                  onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                  placeholder="Repeat password"
+                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
+                />
+              </div>
             </div>
           </div>
 
