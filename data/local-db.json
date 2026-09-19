@@ -1,41 +1,27 @@
 {
   "profiles": [
     {
-      "id": "user-001",
-      "family_id": "OBEFF-00101",
-      "email": "elder.obeff@family.org",
-      "first_name": "Eteidung",
+      "id": "user-super-admin",
+      "family_id": "OBEFF-00001",
+      "email": "admin@obeff.org",
+      "first_name": "Chief",
       "last_name": "Obeff",
-      "phone": "+234 803 111 2222",
-      "address": "14 Heritage Boulevard, Calabar, Nigeria",
-      "date_of_birth": "1948-04-12",
+      "phone": "+234 803 000 0001",
+      "address": "1 Heritage Palace, Calabar, Cross River State, Nigeria",
+      "date_of_birth": "1950-01-01",
       "role": "Super-Admin",
       "status": "Active",
       "avatar_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
       "created_at": "2026-01-01T10:00:00Z"
     },
     {
-      "id": "user-002",
-      "family_id": "OBEFF-00102",
-      "email": "maria.obeff@family.org",
-      "first_name": "Maria",
-      "last_name": "Obeff",
-      "phone": "+234 802 333 4444",
-      "address": "14 Heritage Boulevard, Calabar, Nigeria",
-      "date_of_birth": "1952-09-25",
-      "role": "Member",
-      "status": "Active",
-      "avatar_url": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80",
-      "created_at": "2026-01-02T11:00:00Z"
-    },
-    {
-      "id": "user-003",
-      "family_id": "OBEFF-00103",
-      "email": "dr.edet@family.org",
+      "id": "user-admin-2",
+      "family_id": "OBEFF-00002",
+      "email": "edet.admin@obeff.org",
       "first_name": "Dr. Edet",
       "last_name": "Obeff",
       "phone": "+234 805 555 6666",
-      "address": "8 Marina Road, Lagos, Nigeria",
+      "address": "8 Marina Road, Victoria Island, Lagos, Nigeria",
       "date_of_birth": "1975-06-18",
       "role": "Admin",
       "status": "Active",
@@ -43,9 +29,9 @@
       "created_at": "2026-01-05T09:30:00Z"
     },
     {
-      "id": "user-004",
-      "family_id": "OBEFF-00104",
-      "email": "kufre.obeff@family.org",
+      "id": "user-member-1",
+      "family_id": "OBEFF-00003",
+      "email": "kufre.member@obeff.org",
       "first_name": "Kufre",
       "last_name": "Obeff",
       "phone": "+44 7700 900123",
@@ -57,9 +43,23 @@
       "created_at": "2026-01-10T14:15:00Z"
     },
     {
-      "id": "user-005",
-      "family_id": "OBEFF-00105",
-      "email": "anima.obeff@family.org",
+      "id": "user-member-2",
+      "family_id": "OBEFF-00004",
+      "email": "maria.member@obeff.org",
+      "first_name": "Maria",
+      "last_name": "Obeff",
+      "phone": "+234 802 333 4444",
+      "address": "14 Heritage Boulevard, Calabar, Nigeria",
+      "date_of_birth": "1955-09-25",
+      "role": "Member",
+      "status": "Active",
+      "avatar_url": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80",
+      "created_at": "2026-01-02T11:00:00Z"
+    },
+    {
+      "id": "user-pending-1",
+      "family_id": "OBEFF-00005",
+      "email": "anima.applicant@obeff.org",
       "first_name": "Anima",
       "last_name": "Obeff",
       "phone": "+234 818 777 8888",
@@ -74,38 +74,38 @@
   "lineage_edges": [
     {
       "id": "edge-001",
-      "child_id": "user-003",
-      "parent_id": "user-001",
+      "child_id": "user-admin-2",
+      "parent_id": "user-super-admin",
       "relation_type": "Father",
       "approval_status": "Approved",
-      "approved_by": "user-001",
+      "approved_by": "user-super-admin",
       "approved_at": "2026-01-05T10:00:00Z",
       "created_at": "2026-01-05T09:40:00Z"
     },
     {
       "id": "edge-002",
-      "child_id": "user-003",
-      "parent_id": "user-002",
+      "child_id": "user-admin-2",
+      "parent_id": "user-member-2",
       "relation_type": "Mother",
       "approval_status": "Approved",
-      "approved_by": "user-001",
+      "approved_by": "user-super-admin",
       "approved_at": "2026-01-05T10:00:00Z",
       "created_at": "2026-01-05T09:40:00Z"
     },
     {
       "id": "edge-003",
-      "child_id": "user-004",
-      "parent_id": "user-003",
+      "child_id": "user-member-1",
+      "parent_id": "user-admin-2",
       "relation_type": "Father",
       "approval_status": "Approved",
-      "approved_by": "user-001",
+      "approved_by": "user-super-admin",
       "approved_at": "2026-01-10T15:00:00Z",
       "created_at": "2026-01-10T14:20:00Z"
     },
     {
       "id": "edge-004",
-      "child_id": "user-005",
-      "parent_id": "user-003",
+      "child_id": "user-pending-1",
+      "parent_id": "user-admin-2",
       "relation_type": "Father",
       "approval_status": "Pending",
       "created_at": "2026-09-18T16:10:00Z",
@@ -115,16 +115,16 @@
   "posts": [
     {
       "id": "post-001",
-      "author_id": "user-001",
+      "author_id": "user-super-admin",
       "author": {
-        "id": "user-001",
-        "family_id": "OBEFF-00101",
-        "email": "elder.obeff@family.org",
-        "first_name": "Eteidung",
+        "id": "user-super-admin",
+        "family_id": "OBEFF-00001",
+        "email": "admin@obeff.org",
+        "first_name": "Chief",
         "last_name": "Obeff",
-        "phone": "+234 803 111 2222",
-        "address": "14 Heritage Boulevard, Calabar, Nigeria",
-        "date_of_birth": "1948-04-12",
+        "phone": "+234 803 000 0001",
+        "address": "1 Heritage Palace, Calabar, Cross River State, Nigeria",
+        "date_of_birth": "1950-01-01",
         "role": "Super-Admin",
         "status": "Active",
         "avatar_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
@@ -135,22 +135,22 @@
       "is_admin_announcement": true,
       "is_pinned": true,
       "likes_count": 24,
-      "comments_count": 5,
+      "comments_count": 2,
       "has_liked": true,
       "created_at": "2026-09-15T08:00:00Z",
       "comments": [
         {
           "id": "c-1",
           "post_id": "post-001",
-          "author_id": "user-003",
+          "author_id": "user-admin-2",
           "author": {
-            "id": "user-003",
-            "family_id": "OBEFF-00103",
-            "email": "dr.edet@family.org",
+            "id": "user-admin-2",
+            "family_id": "OBEFF-00002",
+            "email": "edet.admin@obeff.org",
             "first_name": "Dr. Edet",
             "last_name": "Obeff",
             "phone": "+234 805 555 6666",
-            "address": "8 Marina Road, Lagos, Nigeria",
+            "address": "8 Marina Road, Victoria Island, Lagos, Nigeria",
             "date_of_birth": "1975-06-18",
             "role": "Admin",
             "status": "Active",
@@ -163,11 +163,11 @@
         {
           "id": "c-2",
           "post_id": "post-001",
-          "author_id": "user-004",
+          "author_id": "user-member-1",
           "author": {
-            "id": "user-004",
-            "family_id": "OBEFF-00104",
-            "email": "kufre.obeff@family.org",
+            "id": "user-member-1",
+            "family_id": "OBEFF-00003",
+            "email": "kufre.member@obeff.org",
             "first_name": "Kufre",
             "last_name": "Obeff",
             "phone": "+44 7700 900123",
@@ -185,11 +185,11 @@
     },
     {
       "id": "post-002",
-      "author_id": "user-004",
+      "author_id": "user-member-1",
       "author": {
-        "id": "user-004",
-        "family_id": "OBEFF-00104",
-        "email": "kufre.obeff@family.org",
+        "id": "user-member-1",
+        "family_id": "OBEFF-00003",
+        "email": "kufre.member@obeff.org",
         "first_name": "Kufre",
         "last_name": "Obeff",
         "phone": "+44 7700 900123",
@@ -200,28 +200,28 @@
         "avatar_url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
         "created_at": "2026-01-10T14:15:00Z"
       },
-      "content": "Just received my Masters in Artificial Intelligence from Imperial College London! Immensely grateful for all the prayers and support from the entire OBEFF family. Here is a short highlight reel from graduation day! 🎓🎉",
+      "content": "Just received my Masters in Artificial Intelligence from Imperial College London! Immensely grateful for all the prayers and support from the entire OBEFF family. 🎓🎉",
       "media_url": "https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=800&auto=format&fit=crop&q=80",
       "is_admin_announcement": false,
       "is_pinned": false,
       "likes_count": 38,
-      "comments_count": 8,
+      "comments_count": 1,
       "has_liked": false,
       "created_at": "2026-09-18T14:20:00Z",
       "comments": [
         {
           "id": "c-3",
           "post_id": "post-002",
-          "author_id": "user-001",
+          "author_id": "user-super-admin",
           "author": {
-            "id": "user-001",
-            "family_id": "OBEFF-00101",
-            "email": "elder.obeff@family.org",
-            "first_name": "Eteidung",
+            "id": "user-super-admin",
+            "family_id": "OBEFF-00001",
+            "email": "admin@obeff.org",
+            "first_name": "Chief",
             "last_name": "Obeff",
-            "phone": "+234 803 111 2222",
-            "address": "14 Heritage Boulevard, Calabar, Nigeria",
-            "date_of_birth": "1948-04-12",
+            "phone": "+234 803 000 0001",
+            "address": "1 Heritage Palace, Calabar, Cross River State, Nigeria",
+            "date_of_birth": "1950-01-01",
             "role": "Super-Admin",
             "status": "Active",
             "avatar_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
@@ -236,7 +236,7 @@
   "notifications": [
     {
       "id": "notif-001",
-      "recipient_id": "user-001",
+      "recipient_id": "user-super-admin",
       "type": "Approval",
       "title": "New Member Registration",
       "message": "Anima Obeff registered and is awaiting admin approval.",
@@ -246,50 +246,36 @@
     },
     {
       "id": "notif-002",
-      "recipient_id": "user-001",
+      "recipient_id": "user-super-admin",
       "type": "Approval",
       "title": "Lineage Verification Request",
       "message": "Anima Obeff submitted parental link to Dr. Edet Obeff.",
       "action_url": "/admin/approvals",
       "is_read": false,
       "created_at": "2026-09-18T16:10:00Z"
-    },
-    {
-      "id": "notif-003",
-      "recipient_id": "user-004",
-      "type": "Announcement",
-      "title": "New Official Announcement",
-      "message": "Eteidung Obeff pinned: Annual OBEFF General Assembly & Thanksgiving.",
-      "action_url": "/feed",
-      "is_read": true,
-      "created_at": "2026-09-15T08:00:00Z"
-    },
-    {
-      "id": "notif-004",
-      "recipient_id": "user-004",
-      "type": "Engagement",
-      "title": "New Comment on Your Post",
-      "message": "Eteidung Obeff commented on your graduation update.",
-      "action_url": "/feed",
-      "is_read": false,
-      "created_at": "2026-09-18T15:00:00Z"
     }
   ],
   "preferences": {
-    "user-001": {
-      "profile_id": "user-001",
+    "user-super-admin": {
+      "profile_id": "user-super-admin",
       "email_announcements": true,
       "email_new_posts": false,
       "email_engagements": true
     },
-    "user-003": {
-      "profile_id": "user-003",
+    "user-admin-2": {
+      "profile_id": "user-admin-2",
       "email_announcements": true,
       "email_new_posts": true,
       "email_engagements": true
     },
-    "user-004": {
-      "profile_id": "user-004",
+    "user-member-1": {
+      "profile_id": "user-member-1",
+      "email_announcements": true,
+      "email_new_posts": false,
+      "email_engagements": true
+    },
+    "user-member-2": {
+      "profile_id": "user-member-2",
       "email_announcements": true,
       "email_new_posts": false,
       "email_engagements": true
@@ -298,9 +284,9 @@
   "audit_logs": [
     {
       "id": "log-001",
-      "admin_id": "user-001",
-      "admin_name": "Eteidung Obeff",
-      "target_user_id": "user-003",
+      "admin_id": "user-super-admin",
+      "admin_name": "Chief Obeff",
+      "target_user_id": "user-admin-2",
       "target_user_name": "Dr. Edet Obeff",
       "action_type": "ROLE_PROMOTED_TO_ADMIN",
       "metadata": {
@@ -311,28 +297,15 @@
     },
     {
       "id": "log-002",
-      "admin_id": "user-001",
-      "admin_name": "Eteidung Obeff",
-      "target_user_id": "user-004",
+      "admin_id": "user-super-admin",
+      "admin_name": "Chief Obeff",
+      "target_user_id": "user-member-1",
       "target_user_name": "Kufre Obeff",
       "action_type": "ACCOUNT_ACTIVATED",
       "metadata": {
-        "family_id": "OBEFF-00104"
+        "family_id": "OBEFF-00003"
       },
       "created_at": "2026-01-10T15:00:00Z"
-    },
-    {
-      "id": "log-003",
-      "admin_id": "user-001",
-      "admin_name": "Eteidung Obeff",
-      "target_user_id": "user-004",
-      "target_user_name": "Kufre Obeff",
-      "action_type": "LINEAGE_APPROVED",
-      "metadata": {
-        "relation": "Father",
-        "parent": "Dr. Edet Obeff"
-      },
-      "created_at": "2026-01-10T15:02:00Z"
     }
   ]
 }

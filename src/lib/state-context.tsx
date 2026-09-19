@@ -53,7 +53,8 @@ interface FamilyContextType {
   updateUserRole: (userId: string, newRole: UserRole) => Promise<void>;
   updateUserStatus: (userId: string, newStatus: UserStatus) => Promise<void>;
   updateProfile: (data: Partial<UserProfile>) => void;
-  switchDemoRole: (role: UserRole) => void;
+  login: (email: string, password?: string) => Promise<{ success: boolean; error?: string; status?: string }>;
+  logout: () => void;
   resetLocalDatabase: () => Promise<void>;
 }
 
@@ -86,11 +87,20 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
   // Hydrate from localStorage or local database on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const sessionEmail = localStorage.getItem('obeff_session_email');
       const cached = localStorage.getItem('obeff_local_db');
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
-          if (parsed.profiles) setProfiles(parsed.profiles);
+          if (parsed.profiles) {
+            setProfiles(parsed.profiles);
+            if (sessionEmail) {
+              const matched = parsed.profiles.find(
+                (p: UserProfile) => p.email.toLowerCase() === sessionEmail.toLowerCase()
+              );
+              if (matched) setCurrentUser(matched);
+            }
+          }
           if (parsed.posts) setPosts(parsed.posts);
           if (parsed.lineage_edges) setLineageEdges(parsed.lineage_edges);
           if (parsed.notifications) setNotifications(parsed.notifications);
@@ -106,6 +116,12 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
               setLineageEdges(data.lineage_edges);
               setNotifications(data.notifications);
               setAuditLogs(data.audit_logs);
+              if (sessionEmail) {
+                const matched = data.profiles.find(
+                  (p: UserProfile) => p.email.toLowerCase() === sessionEmail.toLowerCase()
+                );
+                if (matched) setCurrentUser(matched);
+              }
             }
           })
           .catch(() => {});
@@ -603,10 +619,36 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const switchDemoRole = (role: UserRole) => {
-    const target = profiles.find((p) => p.role === role && p.status === 'Active');
-    if (target) {
-      setCurrentUser(target);
+  const login = async (
+    email: string,
+    password?: string
+  ): Promise<{ success: boolean; error?: string; status?: string }> => {
+    const user = profiles.find((p) => p.email.toLowerCase() === email.trim().toLowerCase());
+    if (!user) {
+      return { success: false, error: 'No account found with this email address. Please register.' };
+    }
+    if (user.status === 'Pending') {
+      return { success: false, status: 'Pending', error: 'Your account is under review by a family administrator.' };
+    }
+    if (user.status === 'Suspended') {
+      return { success: false, status: 'Suspended', error: 'This account has been suspended by a family administrator.' };
+    }
+
+    setCurrentUser(user);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('obeff_session_email', user.email);
+    }
+    return { success: true };
+  };
+
+  const logout = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('obeff_session_email');
+    }
+    if (profiles.length > 0) {
+      // Set to first active member
+      const active = profiles.find((p) => p.status === 'Active') || profiles[0];
+      setCurrentUser(active);
     }
   };
 
@@ -637,7 +679,8 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         updateUserRole,
         updateUserStatus,
         updateProfile,
-        switchDemoRole,
+        login,
+        logout,
         resetLocalDatabase,
       }}
     >

@@ -6,13 +6,13 @@
 
 ## 🌟 Key Features
 
-* **Family Member Identity & RBAC Privacy:**
-  * Member sign-up with sequential **Unique Family ID** (e.g. `OBEFF-00101`).
+* **Production Member Identity & RBAC Privacy:**
+  * Member sign-up with sequential **Unique Family ID** (e.g. `OBEFF-00001`, `OBEFF-00002`).
   * Account approval workflow: new registrations remain in "Pending Review" until authorized by an administrator.
-  * Strict Row-Level Security (RLS) & PII Protection: Residential addresses, phone numbers, and dates of birth are shielded from public queries.
+  * Strict Row-Level Security (RLS) & PII Protection: Residential addresses, phone numbers, and dates of birth are shielded from unverified queries.
 * **Dual-Role Administrator Experience:**
   * **Family Member First:** Admins have standard member profiles, can post everyday updates, react, comment, and have a verified position on the family tree.
-  * **Dedicated Admin Console:** Fast context switcher between "Family Member View" and "Admin Console".
+  * **Dedicated Admin Console:** Sleek access to the Administrator Console (protected by role guards and only visible to authorized Admins & Super-Admins).
   * **Priority Announcements:** Admins can publish official family bulletins that are pinned to the top of all user feeds with a distinctive emerald/gold badge and broadcasted to members.
 * **Interactive Visual Family Tree:**
   * Navigable generational hierarchy (Generations 1, 2, 3+).
@@ -47,12 +47,12 @@ npm install
 ```
 
 ### 2. Environment Variables Setup
-Copy the `.env.example` file to create your local `.env.local`:
+Copy `.env.example` to create your local `.env.local`:
 ```bash
 cp .env.example .env.local
 ```
 
-> ⚠️ **Security Notice:** Never commit `.env` or `.env.local` to GitHub. It is already strictly ignored in `.gitignore`.
+> ⚠️ **Security Notice:** Never commit `.env` or `.env.local` to GitHub. They are strictly ignored in `.gitignore`.
 
 ### 3. Run Development Server
 ```bash
@@ -60,87 +60,107 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-> The application includes built-in mock data and reactive stores, allowing immediate testing of all Member, Admin, and Super-Admin roles directly from the UI without database credentials configured.
+---
+
+## 👤 Pre-Configured Test Accounts
+
+The local MVP environment includes 4 pre-configured accounts with real session authentication:
+
+| Role | Name | Family ID | Email | Default Password | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Super Admin** | Chief Obeff | `OBEFF-00001` | `admin@obeff.org` | *Any text* (e.g. `admin123`) | Full system governance, audit trail, role assignment |
+| **Admin** | Dr. Edet Obeff | `OBEFF-00002` | `edet.admin@obeff.org` | *Any text* (e.g. `admin123`) | Approvals, member management, priority announcements |
+| **Member 1** | Kufre Obeff | `OBEFF-00003` | `kufre.member@obeff.org` | *Any text* (e.g. `member123`) | Lineage submission, family feed, tree exploration |
+| **Member 2** | Maria Obeff | `OBEFF-00004` | `maria.member@obeff.org` | *Any text* (e.g. `member123`) | Lineage submission, family feed, tree exploration |
+| **Pending** | Anima Obeff | `OBEFF-00005` | `anima.applicant@obeff.org` | *Any text* | Demonstrates the "Pending Review" user gate |
 
 ---
 
 ## 🗄️ Database Management Setup (Supabase)
 
-To connect your live production database:
+To set up your live PostgreSQL database on Supabase:
 
 ### Step 1: Create a Supabase Project
 1. Log in to [Supabase](https://app.supabase.com/) and click **New Project**.
-2. Choose a project name (e.g. `obeff-ims`), set a strong database password, and select the region closest to your family members.
+2. Name the project `OBEFF-IMS`, generate a strong database password, and choose your preferred geographic region.
 
-### Step 2: Execute Schema & Security Rules
-1. In the Supabase Dashboard, navigate to the **SQL Editor** tab (left sidebar).
-2. Open the file [`supabase/schema.sql`](./supabase/schema.sql) in this repository.
-3. Copy its entire content, paste it into the Supabase SQL Editor, and click **Run**.
-4. This script automatically creates:
-   * Tables (`profiles`, `lineage_edges`, `posts`, `comments`, `reactions`, `notifications`, `notification_preferences`, `audit_logs`).
-   * Automated sequential Family ID generator (`OBEFF-00101`, etc.).
-   * Strict Row-Level Security (RLS) policies.
-   * Auto-registration trigger (`handle_new_user`).
+### Step 2: Execute Schema
+1. In the Supabase Dashboard, click **SQL Editor** on the left menu.
+2. Open [`supabase/schema.sql`](./supabase/schema.sql) in this repository.
+3. Paste the entire content into the SQL Editor and click **Run**.
+4. This creates:
+   * All database tables (`profiles`, `lineage_edges`, `posts`, `comments`, `reactions`, `notifications`, `notification_preferences`, `audit_logs`).
+   * Automated sequential Family ID sequence (`OBEFF-00101`, etc.).
+   * Automated user registration trigger (`handle_new_user`).
+   * Row-Level Security (RLS) policies.
 
-### Step 3: Retrieve Your Credentials
-1. Go to **Project Settings** -> **API**.
+### Step 3: Seed Initial Accounts (Optional)
+To seed the 4 predefined accounts directly into Supabase:
+1. Open [`supabase/seed.sql`](./supabase/seed.sql).
+2. Paste the content into the SQL Editor and click **Run**.
+3. All 4 accounts will be seeded with default password `ObeffHeritage2026!`.
+
+### Step 4: Retrieve API Credentials
+1. Navigate to **Project Settings** -> **API**.
 2. Copy:
    * **Project URL** -> `NEXT_PUBLIC_SUPABASE_URL`
    * **anon / public key** -> `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   * **service_role key** -> `SUPABASE_SERVICE_ROLE_KEY` *(Keep this secret!)*
-3. Paste them into your `.env.local` file (and into Vercel Environment Variables).
+   * **service_role key** -> `SUPABASE_SERVICE_ROLE_KEY` *(Confidential: never expose client-side)*
+3. Paste these values into your `.env.local` and your Vercel Project Settings.
 
-### Step 4: Bootstrap the First Super-Admin
-After signing up with your primary admin email via the app, run this single SQL command in the Supabase SQL Editor to grant yourself full `Super-Admin` status:
+### Step 5: Bootstrap Your Own Personal Super-Admin Account
+When you register your personal email through the live website signup form, run this SQL query once in the Supabase SQL Editor to grant yourself **Super-Admin** rights:
 ```sql
 UPDATE public.profiles
 SET role = 'Super-Admin', status = 'Active'
-WHERE id = (SELECT id FROM auth.users WHERE email = 'your-email@domain.com');
+WHERE id = (SELECT id FROM auth.users WHERE email = 'your-personal-email@domain.com');
 ```
 
 ---
 
-## 📧 Transactional Email Setup (Resend)
+## 🔒 Security Architecture & RLS Safeguards
 
-1. Create a free account at [Resend.com](https://resend.com/).
-2. Add and verify your custom domain (e.g., `family.org`) by configuring the provided DNS records (SPF, DKIM).
-3. Generate an API key and add it to your environment:
-   ```env
-   RESEND_API_KEY=re_your_api_key_here
-   EMAIL_FROM="OBEFF Family Portal <notifications@family.org>"
-   ```
-4. *Local Testing:* If no `RESEND_API_KEY` is provided, all transactional emails (approvals, activations, announcements) will be logged cleanly to your terminal console without failing.
+The platform employs a defense-in-depth security model:
+1. **Personally Identifiable Information (PII) Shielding:**
+   * Residential addresses, phone numbers, and dates of birth are hidden from standard directory searches and tree views.
+   * Supabase Row-Level Security (RLS) ensures only users themselves or verified administrators can query full personal details.
+2. **Role-Based Access Control (RBAC):**
+   * Member access is restricted to approved accounts (`status = 'Active'`).
+   * Admin routes (`/admin/*`) are protected both at the layout level and via PostgreSQL security functions (`public.is_admin()`).
+3. **No Search Engine Indexing:**
+   * The application serves `X-Robots-Tag: noindex, nofollow` headers to guarantee family member profiles are never indexed by search engines.
+4. **Audit Logging:**
+   * All member activations, suspensions, and role changes generate immutable records in `public.audit_logs`.
 
 ---
 
 ## 🌐 Deploying to Vercel
 
-This repository includes [`vercel.json`](./vercel.json) pre-configured with security headers (`X-Frame-Options: DENY`, `noindex` headers to shield family records from search engine crawlers).
+### Step 1: Push Code to GitHub
+Ensure all changes are pushed to your repository:
+```bash
+git push origin main
+```
 
-### Deploy via GitHub Integration (Recommended):
-1. Push this repository to GitHub: `https://github.com/alfiinyang/OBEFF-IMS`.
-2. Visit [Vercel](https://vercel.com/) and click **Add New...** -> **Project**.
-3. Import the `OBEFF-IMS` repository.
-4. In the **Environment Variables** section, add:
-   * `NEXT_PUBLIC_SUPABASE_URL`
-   * `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   * `SUPABASE_SERVICE_ROLE_KEY`
-   * `RESEND_API_KEY`
-   * `EMAIL_FROM`
-   * `NEXT_PUBLIC_APP_URL` (set to your Vercel deployment URL, e.g. `https://obeff-ims.vercel.app`)
-5. Click **Deploy**. Vercel will build and launch your application in under 2 minutes.
+### Step 2: Import into Vercel
+1. Log in to [Vercel](https://vercel.com/) and select **Add New...** -> **Project**.
+2. Select your GitHub repository: `alfiinyang/OBEFF-IMS`.
+3. Framework Preset: Next.js (detected automatically).
 
----
+### Step 3: Configure Environment Variables in Vercel
+Under **Environment Variables**, add:
+* `NEXT_PUBLIC_SUPABASE_URL` = `https://[your-project-id].supabase.co`
+* `NEXT_PUBLIC_SUPABASE_ANON_KEY` = `[your-anon-key]`
+* `SUPABASE_SERVICE_ROLE_KEY` = `[your-service-role-key]`
+* `NEXT_PUBLIC_APP_URL` = `https://[your-app-name].vercel.app`
+* `RESEND_API_KEY` = `[your-resend-api-key]` *(Optional for transactional emails)*
+* `EMAIL_FROM` = `OBEFF Portal <notifications@yourfamilydomain.org>` *(Optional)*
 
-## 🔒 Security & Privacy Practices
-
-* **No Search Engine Indexing:** Enforced via `X-Robots-Tag: noindex, nofollow` in middleware and `vercel.json` so personal family information is never indexed by Google.
-* **Row-Level Security:** Enforced at the PostgreSQL level. Non-admin users cannot query residential addresses or dates of birth of other members.
-* **Audit Trail:** All role upgrades, activations, and lineage approvals are recorded in the `audit_logs` table.
-* **Secret Hygiene:** Database credentials, service role keys, and confidential planning documents are strictly excluded via `.gitignore`.
+### Step 4: Deploy
+Click **Deploy**. Vercel will build and deploy the production site with automated SSL and edge routing.
 
 ---
 
 ## 📄 License
 
-Private & Proprietary. Created for the verified members and descendants of the OBEFF family heritage.
+Private & Proprietary. Created for verified members and descendants of the OBEFF family heritage.
