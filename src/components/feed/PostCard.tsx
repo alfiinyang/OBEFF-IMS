@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useFamily } from '@/lib/state-context';
 import { Post } from '@/types';
+import PostMediaEmbed from './PostMediaEmbed';
 import {
   Pin,
   Heart,
@@ -81,15 +82,6 @@ export default function PostCard({ post }: PostCardProps) {
   const isQuarantined = post.status === 'quarantined';
   const isRemoved = post.status === 'removed';
   const isPinnedAnnouncement = post.is_admin_announcement && post.is_pinned;
-
-  // Helper to extract YouTube embed ID
-  const getYouTubeEmbedUrl = (url: string) => {
-    const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
-    return match ? `https://www.youtube.com/embed/${match[1]}` : null;
-  };
-
-  const youtubeEmbed = post.media_url ? getYouTubeEmbedUrl(post.media_url) : null;
-  const isImage = post.media_url && !youtubeEmbed && (post.media_url.match(/\.(jpeg|jpg|gif|png|webp)/i) || post.media_url.includes('unsplash.com'));
 
   const handleShare = () => {
     setCopiedLink(true);
@@ -464,9 +456,15 @@ export default function PostCard({ post }: PostCardProps) {
               type="url"
               value={editMediaUrl}
               onChange={(e) => setEditMediaUrl(e.target.value)}
-              placeholder="Media / Video Link (optional)..."
+              placeholder="Paste YouTube video or external image link..."
               className="w-full p-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-white"
             />
+            {editMediaUrl.trim() && (
+              <div className="pt-1">
+                <p className="text-[10px] font-semibold text-slate-500 mb-1">Live Media Preview:</p>
+                <PostMediaEmbed url={editMediaUrl.trim()} allowLightbox={false} className="max-h-56" />
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-1">
               <button
                 type="button"
@@ -489,26 +487,10 @@ export default function PostCard({ post }: PostCardProps) {
           </p>
         )}
 
-        {/* Media Embeds */}
-        {!isEditing && youtubeEmbed && (
-          <div className="mb-4 rounded-2xl overflow-hidden aspect-video border border-slate-200">
-            <iframe
-              src={youtubeEmbed}
-              title="YouTube video player"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              className="w-full h-full"
-            />
-          </div>
-        )}
-
-        {!isEditing && isImage && (
-          <div className="mb-4 rounded-2xl overflow-hidden max-h-96 border border-slate-200">
-            <img
-              src={post.media_url}
-              alt="Post visual attachment"
-              className="w-full h-full object-cover"
-            />
+        {/* Media Embeds (YouTube stream or direct client-rendered external image - zero server download) */}
+        {!isEditing && post.media_url && (
+          <div className="mb-4">
+            <PostMediaEmbed url={post.media_url} alt={`Attachment from ${post.author.first_name}`} />
           </div>
         )}
 

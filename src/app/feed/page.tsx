@@ -3,12 +3,15 @@
 import React, { useState } from 'react';
 import { useFamily } from '@/lib/state-context';
 import PostCard from '@/components/feed/PostCard';
+import PostMediaEmbed from '@/components/feed/PostMediaEmbed';
 import {
   Pin,
   Send,
   Shield,
   Video,
   Image as ImageIcon,
+  X,
+  Sparkles,
 } from 'lucide-react';
 
 export default function FeedPage() {
@@ -68,14 +71,45 @@ export default function FeedPage() {
           </div>
 
           {showMediaInput && (
-            <div className="pl-12">
-              <input
-                type="url"
-                value={mediaUrl}
-                onChange={(e) => setMediaUrl(e.target.value)}
-                placeholder="Paste YouTube video link or image URL..."
-                className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-              />
+            <div className="pl-12 space-y-2">
+              <div className="relative">
+                <input
+                  type="url"
+                  value={mediaUrl}
+                  onChange={(e) => setMediaUrl(e.target.value)}
+                  placeholder="Paste direct image link (Unsplash, Imgur, etc.) or YouTube video URL..."
+                  className="w-full text-xs p-2.5 pr-8 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                />
+                {mediaUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setMediaUrl('')}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Instant Client-Side Preview (Zero Server Storage) */}
+              {mediaUrl.trim() && (
+                <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/90 space-y-1.5 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                      Live Media Preview (Direct Embed • Zero Server Storage)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setMediaUrl('')}
+                      className="text-slate-400 hover:text-rose-600 font-medium cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <PostMediaEmbed url={mediaUrl.trim()} allowLightbox={false} className="max-h-60" />
+                </div>
+              )}
             </div>
           )}
 
@@ -116,12 +150,12 @@ export default function FeedPage() {
                 type="button"
                 onClick={() => setShowMediaInput(!showMediaInput)}
                 className={`p-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
-                  showMediaInput ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
+                  showMediaInput || mediaUrl ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'text-slate-500 hover:bg-slate-100'
                 }`}
               >
-                <Video className="w-4 h-4 text-emerald-600" />
                 <ImageIcon className="w-4 h-4 text-blue-500" />
-                <span>Add Media/Video</span>
+                <Video className="w-4 h-4 text-emerald-600" />
+                <span>Add Image / Video</span>
               </button>
             </div>
 

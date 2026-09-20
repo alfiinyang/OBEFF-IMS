@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { useFamily } from '@/lib/state-context';
-import { Megaphone, Pin, Plus, CheckCircle2, Shield, Calendar } from 'lucide-react';
+import PostMediaEmbed from '@/components/feed/PostMediaEmbed';
+import { Megaphone, Pin, Plus, CheckCircle2, Shield, Calendar, Image as ImageIcon, X, Sparkles } from 'lucide-react';
 
 export default function AnnouncementsManagerPage() {
   const { posts, createPost } = useFamily();
@@ -76,13 +77,44 @@ export default function AnnouncementsManagerPage() {
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Attached Video Link or Image URL (Optional)
             </label>
-            <input
-              type="url"
-              value={mediaUrl}
-              onChange={(e) => setMediaUrl(e.target.value)}
-              placeholder="e.g. https://www.youtube.com/watch?v=..."
-              className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-            />
+            <div className="relative">
+              <input
+                type="url"
+                value={mediaUrl}
+                onChange={(e) => setMediaUrl(e.target.value)}
+                placeholder="Paste direct image link (Unsplash, Imgur, etc.) or YouTube video URL..."
+                className="w-full p-2.5 pr-8 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+              />
+              {mediaUrl && (
+                <button
+                  type="button"
+                  onClick={() => setMediaUrl('')}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Instant Live Preview */}
+            {mediaUrl.trim() && (
+              <div className="mt-2 p-3 bg-slate-50/80 rounded-2xl border border-slate-200/90 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                    Live Attachment Preview (Direct Embed • Zero Server Download)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setMediaUrl('')}
+                    className="text-slate-400 hover:text-rose-600 font-medium cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <PostMediaEmbed url={mediaUrl.trim()} allowLightbox={false} className="max-h-56" />
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between pt-2">
@@ -110,9 +142,9 @@ export default function AnnouncementsManagerPage() {
           {announcements.map((item) => (
             <div
               key={item.id}
-              className="p-5 rounded-2xl border-2 border-emerald-500/30 bg-emerald-50/30 relative"
+              className="p-5 rounded-2xl border-2 border-emerald-500/30 bg-emerald-50/30 relative space-y-3"
             >
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Shield className="w-4 h-4 text-emerald-700" />
                   <span className="text-xs font-bold text-emerald-900">
@@ -133,7 +165,14 @@ export default function AnnouncementsManagerPage() {
                 {item.content}
               </p>
 
-              <div className="mt-3 pt-2 border-t border-emerald-200/60 text-[11px] text-slate-500 flex items-center gap-2">
+              {/* Media Embed in Announcement */}
+              {item.media_url && (
+                <div className="pt-1">
+                  <PostMediaEmbed url={item.media_url} alt="Announcement visual attachment" />
+                </div>
+              )}
+
+              <div className="pt-2 border-t border-emerald-200/60 text-[11px] text-slate-500 flex items-center gap-2">
                 <span>Published by: {item.author.first_name} {item.author.last_name}</span>
                 <span>•</span>
                 <span>{item.likes_count} Likes</span>

@@ -20,6 +20,7 @@ import {
   X,
   MessageSquare,
 } from 'lucide-react';
+import PostMediaEmbed from '@/components/feed/PostMediaEmbed';
 
 export default function ApprovalsPage() {
   const {
@@ -487,9 +488,9 @@ export default function ApprovalsPage() {
                   <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 text-xs text-slate-800 leading-relaxed whitespace-pre-line">
                     {post.content}
                     {post.media_url && (
-                      <p className="mt-2 text-[11px] text-slate-500 truncate">
-                        Media attachment: <span className="underline">{post.media_url}</span>
-                      </p>
+                      <div className="mt-3">
+                        <PostMediaEmbed url={post.media_url} alt="Reported post attachment" />
+                      </div>
                     )}
                   </div>
 
