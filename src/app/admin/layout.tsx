@@ -17,13 +17,19 @@ import {
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { currentUser, profiles, lineageEdges } = useFamily();
+  const { currentUser, profiles, lineageEdges, posts } = useFamily();
 
   const isAdmin = ['Admin', 'Super-Admin'].includes(currentUser.role);
 
+  const pendingModerationCount = posts.reduce(
+    (acc, p) => acc + (p.reports ? p.reports.filter((r) => r.status === 'pending').length : 0),
+    0
+  );
+
   const pendingCount =
     profiles.filter((p) => p.status === 'Pending').length +
-    lineageEdges.filter((e) => e.approval_status === 'Pending').length;
+    lineageEdges.filter((e) => e.approval_status === 'Pending').length +
+    pendingModerationCount;
 
   if (!isAdmin) {
     return (

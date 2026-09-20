@@ -38,6 +38,8 @@ export const COUNTRIES: CountryInfo[] = [
   { name: 'China', code: '+86', flag: '🇨🇳' },
 ];
 
+import { formatPhoneNumber } from '@/lib/phone-formatter';
+
 interface CountryPhoneInputProps {
   countryCode: string;
   phoneNumber: string;
@@ -75,9 +77,38 @@ export default function CountryPhoneInput({
       c.code.includes(searchTerm)
   );
 
+  const handleCountrySelect = (code: string) => {
+    onCountryCodeChange(code);
+    setIsOpen(false);
+    setSearchTerm('');
+    if (phoneNumber) {
+      onPhoneNumberChange(formatPhoneNumber(phoneNumber, code));
+    }
+  };
+
+  const handlePhoneInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatPhoneNumber(e.target.value, countryCode);
+    onPhoneNumberChange(formatted);
+  };
+
+  const getPlaceholder = (code: string) => {
+    switch (code) {
+      case '+234':
+        return '708 005 5637';
+      case '+1':
+        return '555 123 4567';
+      case '+44':
+        return '7700 900123';
+      case '+233':
+        return '24 123 4567';
+      default:
+        return '708 005 5637';
+    }
+  };
+
   return (
     <div className="grid grid-cols-12 gap-2" ref={dropdownRef}>
-      {/* 1. Country Code Dropdown / Type Selector (4 cols on mobile, 4-5 cols on desktop) */}
+      {/* 1. Country Code Dropdown / Type Selector */}
       <div className="col-span-5 sm:col-span-4 relative">
         <button
           type="button"
@@ -122,11 +153,7 @@ export default function CountryPhoneInput({
                   <button
                     key={`${country.name}-${country.code}`}
                     type="button"
-                    onClick={() => {
-                      onCountryCodeChange(country.code);
-                      setIsOpen(false);
-                      setSearchTerm('');
-                    }}
+                    onClick={() => handleCountrySelect(country.code)}
                     className={`w-full flex items-center justify-between px-3 py-2 text-xs rounded-xl transition text-left ${
                       country.code === countryCode
                         ? 'bg-emerald-50 text-emerald-900 font-bold'
@@ -148,16 +175,16 @@ export default function CountryPhoneInput({
         )}
       </div>
 
-      {/* 2. Separate Local Phone Number Input (7-8 cols) */}
+      {/* 2. Separate Local Phone Number Input */}
       <div className="col-span-7 sm:col-span-8 relative">
         <Phone className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
         <input
           type="tel"
           required={required}
           value={phoneNumber}
-          onChange={(e) => onPhoneNumberChange(e.target.value)}
-          placeholder="803 123 4567"
-          className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
+          onChange={handlePhoneInputChange}
+          placeholder={getPlaceholder(selectedCountry.code)}
+          className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition font-mono"
         />
       </div>
     </div>

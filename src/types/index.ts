@@ -34,6 +34,18 @@ export interface LineageEdge {
   child?: UserProfile;
 }
 
+export type PostStatus = 'published' | 'quarantined' | 'removed';
+
+export interface PostReport {
+  id: string;
+  post_id: string;
+  reporter_id: string;
+  reporter_name: string;
+  reason: string;
+  created_at: string;
+  status: 'pending' | 'resolved' | 'dismissed';
+}
+
 export interface Post {
   id: string;
   author_id: string;
@@ -46,6 +58,12 @@ export interface Post {
   comments_count: number;
   has_liked?: boolean;
   created_at: string;
+  edited_at?: string;
+  status?: PostStatus;
+  moderation_reason?: string;
+  moderated_by?: string;
+  moderated_at?: string;
+  reports?: PostReport[];
   comments?: Comment[];
 }
 

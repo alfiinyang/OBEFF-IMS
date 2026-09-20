@@ -10,6 +10,7 @@ import {
   AuditLog,
   UserRole,
   UserStatus,
+  PostReport,
 } from '@/types';
 import {
   INITIAL_PROFILES,
@@ -35,6 +36,13 @@ interface FamilyContextType {
   markAllNotificationsAsRead: () => void;
   updatePreferences: (prefs: Partial<NotificationPreferences>) => void;
   createPost: (content: string, mediaUrl?: string, isAdminAnnouncement?: boolean, isPinned?: boolean) => Promise<void>;
+  editPost: (postId: string, newContent: string, newMediaUrl?: string) => void;
+  deletePost: (postId: string) => void;
+  reportPost: (postId: string, reason: string) => Promise<void>;
+  quarantinePost: (postId: string, reason: string) => Promise<void>;
+  removePost: (postId: string, reason: string) => Promise<void>;
+  restorePost: (postId: string) => void;
+  dismissReport: (postId: string, reportId: string) => void;
   toggleLikePost: (postId: string) => void;
   addComment: (postId: string, content: string) => void;
   submitLineage: (parentId: string, relationType: 'Father' | 'Mother', notes?: string) => Promise<void>;
@@ -166,7 +174,9 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(INITIAL_PROFILES[2]);
   };
 
-  const userNotifications = notifications.filter((n) => n.recipient_id === currentUser.id);
+  const userNotifications = [...notifications]
+    .filter((n) => n.recipient_id === currentUser.id)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const unreadNotificationCount = userNotifications.filter((n) => !n.is_read).length;
 
   const markNotificationAsRead = (id: string) => {
@@ -210,6 +220,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       likes_count: 0,
       comments_count: 0,
       has_liked: false,
+      status: 'published',
       created_at: new Date().toISOString(),
       comments: [],
     };
@@ -244,6 +255,196 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         setNotifications((prev) => [notif, ...prev]);
       }
     }
+  };
+
+  const editPost = (postId: string, newContent: string, newMediaUrl?: string) => {
+    setPosts((prev) =>
+      prev.map((post) => {
+        if (post.id === postId && post.author_id === currentUser.id) {
+          return {
+            ...post,
+            content: newContent,
+            media_url: newMediaUrl,
+            edited_at: new Date().toISOString(),
+          };
+        }
+        return post;
+      })
+    );
+  };
+
+  const deletePost = (postId: string) => {
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  };
+
+  const reportPost = async (postId: string, reason: string) => {
+    const post = posts.find((p) => p.id === postId);
+    if (!post) return;
+
+    const report: PostReport = {
+      id: `rep-${Date.now()}`,
+      post_id: postId,
+      reporter_id: currentUser.id,
+      reporter_name: `${currentUser.first_name} ${currentUser.last_name}`,
+      reason,
+      created_at: new Date().toISOString(),
+      status: 'pending',
+    };
+
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              reports: [...(p.reports || []), report],
+            }
+          : p
+      )
+    );
+
+    // Notify all active Admins & Super-Admins in-app & email
+    const admins = profiles.filter((p) => ['Admin', 'Super-Admin'].includes(p.role) && p.status === 'Active');
+    for (const admin of admins) {
+      const notif = await dispatchNotification({
+        recipient: admin,
+        type: 'Approval',
+        title: 'Post Reported for Content Review',
+        message: `${currentUser.first_name} ${currentUser.last_name} reported a post by ${post.author.first_name}: "${reason}"`,
+        actionUrl: '/admin/approvals',
+        emailSubject: `[OBEFF IMS Moderation Alert] Post Reported by ${currentUser.first_name}`,
+        emailBody: `<p>A family post has been flagged for review.</p><p><strong>Reporter:</strong> ${currentUser.first_name} ${currentUser.last_name}</p><p><strong>Reason:</strong> ${reason}</p>`,
+      });
+      setNotifications((prevNotifs) => [notif, ...prevNotifs]);
+    }
+  };
+
+  const quarantinePost = async (postId: string, reason: string) => {
+    const post = posts.find((p) => p.id === postId);
+    if (!post) return;
+
+    const now = new Date().toISOString();
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              status: 'quarantined' as const,
+              moderation_reason: reason,
+              moderated_by: `${currentUser.first_name} ${currentUser.last_name}`,
+              moderated_at: now,
+              reports: (p.reports || []).map((r) => ({ ...r, status: 'resolved' as const })),
+            }
+          : p
+      )
+    );
+
+    // Notify the author in-app and by email
+    const author = profiles.find((p) => p.id === post.author_id);
+    if (author) {
+      const notif = await dispatchNotification({
+        recipient: author,
+        type: 'System',
+        title: 'Your Post Has Been Quarantined',
+        message: `Your post was quarantined by Administrator ${currentUser.first_name}. Reason: "${reason}"`,
+        actionUrl: '/profile',
+        emailSubject: 'OBEFF IMS - Notice of Post Quarantine',
+        emailBody: `<p>Dear ${author.first_name},</p><p>Your family post has been placed under quarantine by Administrator ${currentUser.first_name} ${currentUser.last_name}.</p><p><strong>Reason:</strong> ${reason}</p><p>Quarantined posts are hidden from the main family feed pending review. You can view it on your profile.</p>`,
+      });
+      setNotifications((prevNotifs) => [notif, ...prevNotifs]);
+    }
+
+    // Audit Log
+    const log: AuditLog = {
+      id: `log-${Date.now()}`,
+      admin_id: currentUser.id,
+      admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
+      target_user_id: post.author_id,
+      target_user_name: `${post.author.first_name} ${post.author.last_name}`,
+      action_type: 'POST_QUARANTINED',
+      metadata: { post_id: postId, reason },
+      created_at: now,
+    };
+    setAuditLogs((prev) => [log, ...prev]);
+  };
+
+  const removePost = async (postId: string, reason: string) => {
+    const post = posts.find((p) => p.id === postId);
+    if (!post) return;
+
+    const now = new Date().toISOString();
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              status: 'removed' as const,
+              moderation_reason: reason,
+              moderated_by: `${currentUser.first_name} ${currentUser.last_name}`,
+              moderated_at: now,
+              reports: (p.reports || []).map((r) => ({ ...r, status: 'resolved' as const })),
+            }
+          : p
+      )
+    );
+
+    // Notify the author in-app and by email
+    const author = profiles.find((p) => p.id === post.author_id);
+    if (author) {
+      const notif = await dispatchNotification({
+        recipient: author,
+        type: 'System',
+        title: 'Your Post Has Been Removed',
+        message: `Your post was removed by Administrator ${currentUser.first_name}. Reason: "${reason}"`,
+        actionUrl: '/profile',
+        emailSubject: 'OBEFF IMS - Notice of Post Removal',
+        emailBody: `<p>Dear ${author.first_name},</p><p>Your family post was permanently removed by Administrator ${currentUser.first_name} ${currentUser.last_name} for non-compliance with community standards.</p><p><strong>Reason provided:</strong> ${reason}</p>`,
+      });
+      setNotifications((prevNotifs) => [notif, ...prevNotifs]);
+    }
+
+    // Audit Log
+    const log: AuditLog = {
+      id: `log-${Date.now()}`,
+      admin_id: currentUser.id,
+      admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
+      target_user_id: post.author_id,
+      target_user_name: `${post.author.first_name} ${post.author.last_name}`,
+      action_type: 'POST_REMOVED',
+      metadata: { post_id: postId, reason },
+      created_at: now,
+    };
+    setAuditLogs((prev) => [log, ...prev]);
+  };
+
+  const restorePost = (postId: string) => {
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              status: 'published' as const,
+              moderation_reason: undefined,
+              moderated_by: undefined,
+              moderated_at: undefined,
+            }
+          : p
+      )
+    );
+  };
+
+  const dismissReport = (postId: string, reportId: string) => {
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              reports: (p.reports || []).map((r) =>
+                r.id === reportId ? { ...r, status: 'dismissed' as const } : r
+              ),
+            }
+          : p
+      )
+    );
   };
 
   const toggleLikePost = (postId: string) => {
@@ -668,6 +869,13 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         markAllNotificationsAsRead,
         updatePreferences,
         createPost,
+        editPost,
+        deletePost,
+        reportPost,
+        quarantinePost,
+        removePost,
+        restorePost,
+        dismissReport,
         toggleLikePost,
         addComment,
         submitLineage,
