@@ -7,6 +7,7 @@ export type NotificationType = 'Approval' | 'System' | 'Announcement' | 'Engagem
 export interface UserProfile {
   id: string;
   family_id: string;
+  registration_request_id?: string;
   email: string;
   first_name: string;
   last_name: string;
@@ -22,6 +23,7 @@ export interface UserProfile {
 
 export interface LineageEdge {
   id: string;
+  request_id?: string;
   child_id: string;
   parent_id: string;
   relation_type: RelationType;
@@ -36,8 +38,21 @@ export interface LineageEdge {
 
 export type PostStatus = 'published' | 'quarantined' | 'removed';
 
+export interface PostAppeal {
+  id: string; // e.g. APL-10294
+  post_id: string;
+  appellant_id: string;
+  appellant_name: string;
+  message: string;
+  created_at: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  resolved_by?: string;
+  resolved_at?: string;
+  resolution_notes?: string;
+}
+
 export interface PostReport {
-  id: string;
+  id: string; // e.g. CMP-10482
   post_id: string;
   reporter_id: string;
   reporter_name: string;
@@ -64,6 +79,7 @@ export interface Post {
   moderated_by?: string;
   moderated_at?: string;
   reports?: PostReport[];
+  appeal?: PostAppeal;
   comments?: Comment[];
 }
 
@@ -97,6 +113,8 @@ export interface NotificationPreferences {
 
 export interface AuditLog {
   id: string;
+  trackable_id?: string; // e.g. DEL-10023, CMP-10482, APL-10294
+  tag?: string; // e.g. 'Content-Deletion', 'Post-Quarantine', 'Quarantine-Appeal', 'Lineage-Approval'
   admin_id: string;
   admin_name: string;
   target_user_id?: string;

@@ -59,6 +59,7 @@ export const INITIAL_PROFILES: UserProfile[] = [
   },
   {
     id: 'user-pending-1',
+    registration_request_id: 'REG-10523',
     family_id: 'OBEFF-00005',
     email: 'anima.applicant@obeff.org',
     first_name: 'Anima',
@@ -106,6 +107,7 @@ export const INITIAL_LINEAGE: LineageEdge[] = [
   },
   {
     id: 'edge-004',
+    request_id: 'LIN-10482',
     child_id: 'user-pending-1',
     parent_id: 'user-admin-2',
     relation_type: 'Father',
@@ -225,6 +227,8 @@ export const INITIAL_PREFERENCES: Record<string, NotificationPreferences> = {
 export const INITIAL_AUDIT_LOGS: AuditLog[] = [
   {
     id: 'log-001',
+    trackable_id: 'REG-10021',
+    tag: 'Account-Admin',
     admin_id: 'user-super-admin',
     admin_name: 'Chief Obeff',
     target_user_id: 'user-admin-2',
@@ -235,6 +239,8 @@ export const INITIAL_AUDIT_LOGS: AuditLog[] = [
   },
   {
     id: 'log-002',
+    trackable_id: 'REG-10022',
+    tag: 'Account-Activation',
     admin_id: 'user-super-admin',
     admin_name: 'Chief Obeff',
     target_user_id: 'user-member-1',
@@ -242,5 +248,36 @@ export const INITIAL_AUDIT_LOGS: AuditLog[] = [
     action_type: 'ACCOUNT_ACTIVATED',
     metadata: { family_id: 'OBEFF-00003' },
     created_at: '2026-01-10T15:00:00Z',
+  },
+  {
+    id: 'log-003',
+    trackable_id: 'LIN-20419',
+    tag: 'Lineage-Approval',
+    admin_id: 'user-super-admin',
+    admin_name: 'Chief Obeff',
+    target_user_id: 'user-member-1',
+    target_user_name: 'Kufre Obeff',
+    action_type: 'LINEAGE_APPROVED',
+    metadata: { edge_id: 'edge-003', relation: 'Father', request_id: 'LIN-20419' },
+    created_at: '2026-01-10T15:05:00Z',
+  },
+  {
+    id: 'log-004',
+    trackable_id: 'DEL-84012',
+    tag: 'Content-Deletion',
+    admin_id: 'user-admin-2',
+    admin_name: 'Dr. Edet Obeff',
+    target_user_id: 'user-member-1',
+    target_user_name: 'Kufre Obeff',
+    action_type: 'POST_PERMANENTLY_DELETED',
+    metadata: {
+      post_id: 'post-legacy-099',
+      trackable_id: 'DEL-84012',
+      author_name: 'Kufre Obeff',
+      content_snippet: 'Preliminary draft update on graduation venue...',
+      deleted_by_role: 'Admin',
+      reason: 'Author duplicate draft cleanup',
+    },
+    created_at: '2026-09-17T11:20:00Z',
   },
 ];

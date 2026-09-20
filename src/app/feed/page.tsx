@@ -33,8 +33,12 @@ export default function FeedPage() {
     setShowMediaInput(false);
   };
 
-  // Filter posts: removed posts are only visible to author or admin
+  // Filter posts: Quarantined posts are strictly hidden from general feed, visible only to admin and the author
+  // Removed posts are only visible to author or admin
   const visiblePosts = posts.filter((p) => {
+    if (p.status === 'quarantined') {
+      return isAdmin || p.author_id === currentUser.id;
+    }
     if (p.status === 'removed') {
       return isAdmin || p.author_id === currentUser.id;
     }

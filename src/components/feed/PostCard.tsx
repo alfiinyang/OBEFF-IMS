@@ -23,6 +23,7 @@ import {
   X,
   RotateCcw,
   CheckCircle2,
+  Clock,
 } from 'lucide-react';
 
 interface PostCardProps {
@@ -39,6 +40,8 @@ export default function PostCard({ post }: PostCardProps) {
     deletePost,
     reportPost,
     quarantinePost,
+    appealQuarantine,
+    resolveAppeal,
     removePost,
     restorePost,
   } = useFamily();
@@ -58,6 +61,13 @@ export default function PostCard({ post }: PostCardProps) {
   const [reportReasonCategory, setReportReasonCategory] = useState('Inappropriate Content');
   const [reportReasonDetails, setReportReasonDetails] = useState('');
   const [reportSubmitted, setReportSubmitted] = useState(false);
+  const [reportSubmittedId, setReportSubmittedId] = useState<string | null>(null);
+
+  // Appeal Modal state
+  const [showAppealModal, setShowAppealModal] = useState(false);
+  const [appealReason, setAppealReason] = useState('');
+  const [appealSubmittedId, setAppealSubmittedId] = useState<string | null>(null);
+  const [isSubmittingAppeal, setIsSubmittingAppeal] = useState(false);
 
   // Admin Moderation Modal state
   const [showModModal, setShowModModal] = useState<'quarantine' | 'remove' | null>(null);
@@ -101,8 +111,8 @@ export default function PostCard({ post }: PostCardProps) {
   };
 
   const handleDelete = () => {
-    if (confirm('Are you sure you want to delete this post? This action cannot be undone.')) {
-      deletePost(post.id);
+    if (confirm('Are you sure you want to permanently delete this post? This action will permanently remove it from all records and log an immutable audit record.')) {
+      deletePost(post.id, isAuthor ? 'Author self-deleted post' : 'Administrative deletion');
     }
   };
 
@@ -110,13 +120,29 @@ export default function PostCard({ post }: PostCardProps) {
     e.preventDefault();
     if (!reportReasonDetails.trim()) return;
     const fullReason = `${reportReasonCategory}: ${reportReasonDetails.trim()}`;
-    await reportPost(post.id, fullReason);
+    const trackableId = await reportPost(post.id, fullReason);
+    setReportSubmittedId(trackableId);
     setReportSubmitted(true);
     setTimeout(() => {
       setReportSubmitted(false);
+      setReportSubmittedId(null);
       setShowReportModal(false);
       setReportReasonDetails('');
-    }, 2000);
+    }, 3000);
+  };
+
+  const handleAppealSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!appealReason.trim()) return;
+    setIsSubmittingAppeal(true);
+    const trackableId = await appealQuarantine(post.id, appealReason.trim());
+    setAppealSubmittedId(trackableId);
+    setIsSubmittingAppeal(false);
+    setTimeout(() => {
+      setShowAppealModal(false);
+      setAppealSubmittedId(null);
+      setAppealReason('');
+    }, 3000);
   };
 
   const handleExecuteModeration = async (e: React.FormEvent) => {
@@ -168,26 +194,93 @@ export default function PostCard({ post }: PostCardProps) {
 
       {/* 2. Quarantine Banner */}
       {isQuarantined && (
-        <div className="bg-amber-500 text-white px-5 py-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-100 flex-shrink-0" />
-            <div>
-              <p className="text-xs font-bold">This post is under administrative quarantine</p>
-              {post.moderation_reason && (
-                <p className="text-[11px] text-amber-100 mt-0.5">
-                  Reason: &quot;{post.moderation_reason}&quot;
-                </p>
+        <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-100 flex-shrink-0 mt-0.5" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold">This post is under administrative quarantine</p>
+                  <span className="px-2 py-0.2 text-[10px] font-mono font-bold bg-amber-700/60 rounded-full text-amber-100">
+                    Hidden from general feed
+                  </span>
+                </div>
+                {post.moderation_reason && (
+                  <p className="text-[11px] text-amber-100 mt-0.5">
+                    Reason: &quot;{post.moderation_reason}&quot;
+                  </p>
+                )}
+                {post.moderated_by && (
+                  <p className="text-[10px] text-amber-200 mt-0.5">
+                    Quarantined by: {post.moderated_by}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Author Appeal Action or Status */}
+            <div className="flex items-center gap-2">
+              {isAuthor && (
+                <>
+                  {post.appeal?.status === 'pending' ? (
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-700/80 border border-amber-400/50 rounded-xl text-xs font-semibold text-amber-100 shadow-xs">
+                      <Clock className="w-3.5 h-3.5 text-amber-200" />
+                      <span>Appeal Pending ({post.appeal.id})</span>
+                    </div>
+                  ) : post.appeal?.status === 'rejected' ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-amber-100 font-medium">
+                        Appeal rejected ({post.appeal.id})
+                      </span>
+                      <button
+                        onClick={() => setShowAppealModal(true)}
+                        className="px-2.5 py-1 rounded-lg bg-white text-amber-900 text-xs font-bold hover:bg-amber-50 transition cursor-pointer"
+                      >
+                        Re-Appeal
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setShowAppealModal(true)}
+                      className="px-3 py-1.5 rounded-xl bg-white text-amber-900 text-xs font-bold hover:bg-amber-50 transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Appeal Quarantine</span>
+                    </button>
+                  )}
+                </>
+              )}
+
+              {isAdmin && (
+                <button
+                  onClick={() => restorePost(post.id)}
+                  className="px-2.5 py-1.5 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs font-semibold transition flex items-center gap-1 cursor-pointer border border-amber-400/40"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Restore Post</span>
+                </button>
               )}
             </div>
           </div>
-          {isAdmin && (
-            <button
-              onClick={() => restorePost(post.id)}
-              className="px-2.5 py-1 rounded-lg bg-white text-amber-900 text-xs font-semibold hover:bg-amber-50 transition flex items-center gap-1 cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Restore Post</span>
-            </button>
+
+          {/* Appeal statement preview if submitted */}
+          {post.appeal && (
+            <div className="mt-2 pt-2 border-t border-amber-400/30 text-xs text-amber-100 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-white">Appeal Reference: {post.appeal.id}</span>
+                <span className="px-2 py-0.2 text-[10px] font-bold rounded-full bg-white/20 uppercase tracking-wider">
+                  Status: {post.appeal.status}
+                </span>
+              </div>
+              <p className="text-[11px] italic bg-amber-700/40 p-2 rounded-xl text-amber-100">
+                &quot;{post.appeal.message}&quot;
+              </p>
+              {post.appeal.resolution_notes && (
+                <p className="text-[11px] text-amber-200">
+                  Reviewer Decision Note: {post.appeal.resolution_notes}
+                </p>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -529,10 +622,17 @@ export default function PostCard({ post }: PostCardProps) {
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200">
             {reportSubmitted ? (
               <div className="text-center py-6 space-y-3">
-                <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" />
-                <h3 className="font-bold text-base text-slate-900">Report Submitted</h3>
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-base text-slate-900">Complaint Logged Successfully</h3>
+                {reportSubmittedId && (
+                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 font-mono text-xs font-bold text-emerald-700">
+                    Trackable Complaint ID: {reportSubmittedId}
+                  </div>
+                )}
                 <p className="text-xs text-slate-500 leading-relaxed">
-                  Thank you for helping safeguard the OBEFF community. Administrators have been notified to review this content.
+                  Thank you for helping safeguard the OBEFF community. Administrators have been notified with this reference ID to review this content.
                 </p>
               </div>
             ) : (
@@ -585,22 +685,102 @@ export default function PostCard({ post }: PostCardProps) {
                     placeholder="Provide a clear description of the issue..."
                     className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    A unique Complaint Reference ID (e.g. CMP-XXXXX) will be generated automatically for audit tracking.
+                  </p>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
                   <button
                     type="button"
                     onClick={() => setShowReportModal(false)}
-                    className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={!reportReasonDetails.trim()}
-                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold transition"
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold transition cursor-pointer"
                   >
                     Submit Report
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 5. Author Quarantine Appeal Modal */}
+      {showAppealModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200">
+            {appealSubmittedId ? (
+              <div className="text-center py-6 space-y-3">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-base text-slate-900">Appeal Submitted Successfully</h3>
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 font-mono text-xs font-bold text-emerald-700">
+                  Trackable Appeal ID: {appealSubmittedId}
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Your formal appeal statement has been dispatched to family administrators. You will be notified in-app and by email upon review.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleAppealSubmit} className="space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <RotateCcw className="w-4 h-4 text-amber-600" />
+                    <h3 className="font-bold text-sm text-slate-900">Appeal Quarantine Decision</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowAppealModal(false)}
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="p-3 bg-amber-50 rounded-2xl text-xs text-amber-800 leading-relaxed border border-amber-200">
+                  <p className="font-semibold">Original Quarantine Reason:</p>
+                  <p className="italic mt-0.5">&quot;{post.moderation_reason || 'Compliance with family decorum'}&quot;</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Your Statement / Grounds for Appeal <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={appealReason}
+                    onChange={(e) => setAppealReason(e.target.value)}
+                    placeholder="Provide relevant context, clarification, or explanation why this post meets family standards..."
+                    className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    An auto-generated trackable ID (e.g. APL-XXXXX) will be assigned for administrative tracking.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAppealModal(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!appealReason.trim() || isSubmittingAppeal}
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold transition cursor-pointer"
+                  >
+                    {isSubmittingAppeal ? 'Submitting...' : 'Submit Appeal'}
                   </button>
                 </div>
               </form>

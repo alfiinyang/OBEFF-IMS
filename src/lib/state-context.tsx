@@ -11,7 +11,9 @@ import {
   UserRole,
   UserStatus,
   PostReport,
+  PostAppeal,
 } from '@/types';
+import { generateTrackableId } from './trackable-id';
 import {
   INITIAL_PROFILES,
   INITIAL_LINEAGE,
@@ -37,9 +39,11 @@ interface FamilyContextType {
   updatePreferences: (prefs: Partial<NotificationPreferences>) => void;
   createPost: (content: string, mediaUrl?: string, isAdminAnnouncement?: boolean, isPinned?: boolean) => Promise<void>;
   editPost: (postId: string, newContent: string, newMediaUrl?: string) => void;
-  deletePost: (postId: string) => void;
-  reportPost: (postId: string, reason: string) => Promise<void>;
+  deletePost: (postId: string, reason?: string) => void;
+  reportPost: (postId: string, reason: string) => Promise<string>;
   quarantinePost: (postId: string, reason: string) => Promise<void>;
+  appealQuarantine: (postId: string, appealMessage: string) => Promise<string>;
+  resolveAppeal: (postId: string, decision: 'accepted' | 'rejected', notes?: string) => Promise<void>;
   removePost: (postId: string, reason: string) => Promise<void>;
   restorePost: (postId: string) => void;
   dismissReport: (postId: string, reportId: string) => void;
@@ -273,21 +277,69 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const deletePost = (postId: string) => {
+  const deletePost = (postId: string, reason?: string) => {
+    const postToDelete = posts.find((p) => p.id === postId);
+    const delTrackableId = generateTrackableId('DEL');
+
+    // 1. Permanently delete from all active application records
     setPosts((prev) => prev.filter((p) => p.id !== postId));
+
+    // 2. Immutable audit log tagged Content-Deletion
+    const now = new Date().toISOString();
+    const log: AuditLog = {
+      id: `log-${Date.now()}`,
+      trackable_id: delTrackableId,
+      tag: 'Content-Deletion',
+      admin_id: currentUser.id,
+      admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
+      target_user_id: postToDelete?.author_id,
+      target_user_name: postToDelete ? `${postToDelete.author.first_name} ${postToDelete.author.last_name}` : undefined,
+      action_type: 'POST_PERMANENTLY_DELETED',
+      metadata: {
+        post_id: postId,
+        trackable_id: delTrackableId,
+        author_name: postToDelete ? `${postToDelete.author.first_name} ${postToDelete.author.last_name}` : 'Unknown',
+        content_snippet: postToDelete ? postToDelete.content.substring(0, 120) : '',
+        deleted_by_role: currentUser.role,
+        reason: reason || (postToDelete && postToDelete.author_id === currentUser.id ? 'Self-deletion by author' : 'Administrative deletion'),
+      },
+      created_at: now,
+    };
+    setAuditLogs((prev) => [log, ...prev]);
+
+    // 3. Notify author if deleted administratively by another user
+    if (postToDelete && postToDelete.author_id !== currentUser.id) {
+      const author = profiles.find((p) => p.id === postToDelete.author_id);
+      if (author) {
+        dispatchNotification({
+          recipient: author,
+          type: 'System',
+          title: `Post Removed [${delTrackableId}]`,
+          message: `Your post was permanently removed by Administrator ${currentUser.first_name}. Tracking ID: ${delTrackableId}. Reason: "${reason || 'Content guidelines violation'}"`,
+          actionUrl: '/profile',
+          emailSubject: `OBEFF IMS - Content Removal Record [${delTrackableId}]`,
+          emailBody: `<p>Dear ${author.first_name},</p><p>Your post has been permanently removed from OBEFF IMS by Administrator ${currentUser.first_name} ${currentUser.last_name}.</p><p><strong>Audit Tracking Reference:</strong> ${delTrackableId}</p><p><strong>Reason:</strong> ${reason || 'Violation of community standards'}</p>`,
+        }).then((notif) => {
+          setNotifications((prev) => [notif, ...prev]);
+        });
+      }
+    }
   };
 
-  const reportPost = async (postId: string, reason: string) => {
+  const reportPost = async (postId: string, reason: string): Promise<string> => {
     const post = posts.find((p) => p.id === postId);
-    if (!post) return;
+    if (!post) return '';
+
+    const reportId = generateTrackableId('CMP');
+    const now = new Date().toISOString();
 
     const report: PostReport = {
-      id: `rep-${Date.now()}`,
+      id: reportId,
       post_id: postId,
       reporter_id: currentUser.id,
       reporter_name: `${currentUser.first_name} ${currentUser.last_name}`,
       reason,
-      created_at: new Date().toISOString(),
+      created_at: now,
       status: 'pending',
     };
 
@@ -302,27 +354,46 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       )
     );
 
+    // Audit Log with CMP trackable ID
+    const log: AuditLog = {
+      id: `log-${Date.now()}`,
+      trackable_id: reportId,
+      tag: 'Complaint-Report',
+      admin_id: currentUser.id,
+      admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
+      target_user_id: post.author_id,
+      target_user_name: `${post.author.first_name} ${post.author.last_name}`,
+      action_type: 'POST_REPORTED',
+      metadata: { post_id: postId, complaint_id: reportId, reason },
+      created_at: now,
+    };
+    setAuditLogs((prev) => [log, ...prev]);
+
     // Notify all active Admins & Super-Admins in-app & email
     const admins = profiles.filter((p) => ['Admin', 'Super-Admin'].includes(p.role) && p.status === 'Active');
     for (const admin of admins) {
       const notif = await dispatchNotification({
         recipient: admin,
         type: 'Approval',
-        title: 'Post Reported for Content Review',
-        message: `${currentUser.first_name} ${currentUser.last_name} reported a post by ${post.author.first_name}: "${reason}"`,
-        actionUrl: '/admin/approvals',
-        emailSubject: `[OBEFF IMS Moderation Alert] Post Reported by ${currentUser.first_name}`,
-        emailBody: `<p>A family post has been flagged for review.</p><p><strong>Reporter:</strong> ${currentUser.first_name} ${currentUser.last_name}</p><p><strong>Reason:</strong> ${reason}</p>`,
+        title: `Post Reported [${reportId}]`,
+        message: `${currentUser.first_name} filed complaint ${reportId} against post by ${post.author.first_name}: "${reason}"`,
+        actionUrl: '/admin/approvals?tab=moderation',
+        emailSubject: `[OBEFF IMS Moderation Alert] Complaint ${reportId} filed by ${currentUser.first_name}`,
+        emailBody: `<p>A family post has been flagged for administrative review.</p><p><strong>Complaint ID:</strong> ${reportId}</p><p><strong>Reporter:</strong> ${currentUser.first_name} ${currentUser.last_name}</p><p><strong>Reason:</strong> ${reason}</p>`,
       });
       setNotifications((prevNotifs) => [notif, ...prevNotifs]);
     }
+
+    return reportId;
   };
 
   const quarantinePost = async (postId: string, reason: string) => {
     const post = posts.find((p) => p.id === postId);
     if (!post) return;
 
+    const qrnId = generateTrackableId('QRN');
     const now = new Date().toISOString();
+
     setPosts((prev) =>
       prev.map((p) =>
         p.id === postId
@@ -344,11 +415,11 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       const notif = await dispatchNotification({
         recipient: author,
         type: 'System',
-        title: 'Your Post Has Been Quarantined',
-        message: `Your post was quarantined by Administrator ${currentUser.first_name}. Reason: "${reason}"`,
+        title: `Post Quarantined [${qrnId}]`,
+        message: `Your post was quarantined by Administrator ${currentUser.first_name}. Reason: "${reason}". You may appeal this decision from your profile.`,
         actionUrl: '/profile',
-        emailSubject: 'OBEFF IMS - Notice of Post Quarantine',
-        emailBody: `<p>Dear ${author.first_name},</p><p>Your family post has been placed under quarantine by Administrator ${currentUser.first_name} ${currentUser.last_name}.</p><p><strong>Reason:</strong> ${reason}</p><p>Quarantined posts are hidden from the main family feed pending review. You can view it on your profile.</p>`,
+        emailSubject: `OBEFF IMS - Notice of Post Quarantine [${qrnId}]`,
+        emailBody: `<p>Dear ${author.first_name},</p><p>Your family post has been placed under quarantine by Administrator ${currentUser.first_name} ${currentUser.last_name}.</p><p><strong>Tracking Ref:</strong> ${qrnId}</p><p><strong>Reason:</strong> ${reason}</p><p>Quarantined posts are hidden from the general feed. You may review and submit an appeal from your profile.</p>`,
       });
       setNotifications((prevNotifs) => [notif, ...prevNotifs]);
     }
@@ -356,64 +427,155 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     // Audit Log
     const log: AuditLog = {
       id: `log-${Date.now()}`,
+      trackable_id: qrnId,
+      tag: 'Post-Quarantine',
       admin_id: currentUser.id,
       admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
       target_user_id: post.author_id,
       target_user_name: `${post.author.first_name} ${post.author.last_name}`,
       action_type: 'POST_QUARANTINED',
-      metadata: { post_id: postId, reason },
+      metadata: { post_id: postId, qrn_id: qrnId, reason },
       created_at: now,
     };
     setAuditLogs((prev) => [log, ...prev]);
   };
 
-  const removePost = async (postId: string, reason: string) => {
+  const appealQuarantine = async (postId: string, appealMessage: string): Promise<string> => {
     const post = posts.find((p) => p.id === postId);
-    if (!post) return;
+    if (!post) return '';
 
+    const appealId = generateTrackableId('APL');
     const now = new Date().toISOString();
+
+    const newAppeal: PostAppeal = {
+      id: appealId,
+      post_id: postId,
+      appellant_id: currentUser.id,
+      appellant_name: `${currentUser.first_name} ${currentUser.last_name}`,
+      message: appealMessage,
+      created_at: now,
+      status: 'pending',
+    };
+
     setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? {
-              ...p,
-              status: 'removed' as const,
-              moderation_reason: reason,
-              moderated_by: `${currentUser.first_name} ${currentUser.last_name}`,
-              moderated_at: now,
-              reports: (p.reports || []).map((r) => ({ ...r, status: 'resolved' as const })),
-            }
-          : p
-      )
+      prev.map((p) => (p.id === postId ? { ...p, appeal: newAppeal } : p))
     );
 
-    // Notify the author in-app and by email
+    // Audit Log
+    const log: AuditLog = {
+      id: `log-${Date.now()}`,
+      trackable_id: appealId,
+      tag: 'Quarantine-Appeal',
+      admin_id: currentUser.id,
+      admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
+      target_user_id: post.author_id,
+      target_user_name: `${post.author.first_name} ${post.author.last_name}`,
+      action_type: 'QUARANTINE_APPEAL_SUBMITTED',
+      metadata: { post_id: postId, appeal_id: appealId, appeal_message: appealMessage },
+      created_at: now,
+    };
+    setAuditLogs((prev) => [log, ...prev]);
+
+    // Notify all active Admins & Super-Admins
+    const admins = profiles.filter((p) => ['Admin', 'Super-Admin'].includes(p.role) && p.status === 'Active');
+    for (const admin of admins) {
+      const notif = await dispatchNotification({
+        recipient: admin,
+        type: 'Approval',
+        title: `Quarantine Appeal Submitted [${appealId}]`,
+        message: `${currentUser.first_name} filed an appeal (${appealId}) for their quarantined post: "${appealMessage.substring(0, 60)}..."`,
+        actionUrl: '/admin/approvals?tab=moderation',
+        emailSubject: `[OBEFF IMS Appeal Alert] Appeal ${appealId} from ${currentUser.first_name}`,
+        emailBody: `<p>A member has appealed a post quarantine.</p><p><strong>Appeal ID:</strong> ${appealId}</p><p><strong>Author:</strong> ${currentUser.first_name} ${currentUser.last_name}</p><p><strong>Appeal Statement:</strong> ${appealMessage}</p>`,
+      });
+      setNotifications((prevNotifs) => [notif, ...prevNotifs]);
+    }
+
+    return appealId;
+  };
+
+  const resolveAppeal = async (
+    postId: string,
+    decision: 'accepted' | 'rejected',
+    notes?: string
+  ) => {
+    const post = posts.find((p) => p.id === postId);
+    if (!post || !post.appeal) return;
+
+    const now = new Date().toISOString();
+    const appealId = post.appeal.id;
+
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (p.id === postId) {
+          const updatedAppeal: PostAppeal = {
+            ...p.appeal!,
+            status: decision,
+            resolved_by: `${currentUser.first_name} ${currentUser.last_name}`,
+            resolved_at: now,
+            resolution_notes: notes,
+          };
+
+          if (decision === 'accepted') {
+            return {
+              ...p,
+              status: 'published' as const,
+              moderation_reason: undefined,
+              appeal: updatedAppeal,
+            };
+          } else {
+            return {
+              ...p,
+              appeal: updatedAppeal,
+            };
+          }
+        }
+        return p;
+      })
+    );
+
+    // Audit Log
+    const log: AuditLog = {
+      id: `log-${Date.now()}`,
+      trackable_id: appealId,
+      tag: 'Appeal-Resolution',
+      admin_id: currentUser.id,
+      admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
+      target_user_id: post.author_id,
+      target_user_name: `${post.author.first_name} ${post.author.last_name}`,
+      action_type: decision === 'accepted' ? 'APPEAL_ACCEPTED' : 'APPEAL_REJECTED',
+      metadata: {
+        post_id: postId,
+        appeal_id: appealId,
+        decision,
+        resolution_notes: notes,
+      },
+      created_at: now,
+    };
+    setAuditLogs((prev) => [log, ...prev]);
+
+    // Notify Author
     const author = profiles.find((p) => p.id === post.author_id);
     if (author) {
       const notif = await dispatchNotification({
         recipient: author,
         type: 'System',
-        title: 'Your Post Has Been Removed',
-        message: `Your post was removed by Administrator ${currentUser.first_name}. Reason: "${reason}"`,
+        title: decision === 'accepted' ? `Appeal Accepted! Post Restored [${appealId}] 🎉` : `Appeal Decision [${appealId}]`,
+        message:
+          decision === 'accepted'
+            ? `Your appeal (${appealId}) was approved by ${currentUser.first_name}. Your post has been restored to the feed.`
+            : `Your appeal (${appealId}) was reviewed and rejected: ${notes || 'Quarantine remains in effect.'}`,
         actionUrl: '/profile',
-        emailSubject: 'OBEFF IMS - Notice of Post Removal',
-        emailBody: `<p>Dear ${author.first_name},</p><p>Your family post was permanently removed by Administrator ${currentUser.first_name} ${currentUser.last_name} for non-compliance with community standards.</p><p><strong>Reason provided:</strong> ${reason}</p>`,
+        emailSubject: `OBEFF IMS - Appeal Decision [${appealId}]`,
+        emailBody: `<p>Dear ${author.first_name},</p><p>Administrator ${currentUser.first_name} ${currentUser.last_name} has reviewed your appeal <strong>${appealId}</strong>.</p><p><strong>Decision:</strong> ${decision === 'accepted' ? 'Approved & Post Restored' : 'Rejected'}</p><p><strong>Admin Notes:</strong> ${notes || 'N/A'}</p>`,
       });
       setNotifications((prevNotifs) => [notif, ...prevNotifs]);
     }
+  };
 
-    // Audit Log
-    const log: AuditLog = {
-      id: `log-${Date.now()}`,
-      admin_id: currentUser.id,
-      admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
-      target_user_id: post.author_id,
-      target_user_name: `${post.author.first_name} ${post.author.last_name}`,
-      action_type: 'POST_REMOVED',
-      metadata: { post_id: postId, reason },
-      created_at: now,
-    };
-    setAuditLogs((prev) => [log, ...prev]);
+  const removePost = async (postId: string, reason: string) => {
+    // Calling deletePost to perform hard permanent deletion and audit log
+    deletePost(postId, reason);
   };
 
   const restorePost = (postId: string) => {
@@ -535,8 +697,10 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
 
   const submitLineage = async (parentId: string, relationType: 'Father' | 'Mother', notes?: string) => {
     const parent = profiles.find((p) => p.id === parentId);
+    const linId = generateTrackableId('LIN');
     const newEdge: LineageEdge = {
       id: `edge-${Date.now()}`,
+      request_id: linId,
       child_id: currentUser.id,
       parent_id: parentId,
       relation_type: relationType,
@@ -549,13 +713,28 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
 
     setLineageEdges((prev) => [newEdge, ...prev]);
 
+    // Audit Log for Lineage Request
+    const log: AuditLog = {
+      id: `log-${Date.now()}`,
+      trackable_id: linId,
+      tag: 'Lineage-Request',
+      admin_id: currentUser.id,
+      admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
+      target_user_id: parentId,
+      target_user_name: parent ? `${parent.first_name} ${parent.last_name}` : undefined,
+      action_type: 'LINEAGE_SUBMITTED',
+      metadata: { request_id: linId, relation_type: relationType, notes },
+      created_at: new Date().toISOString(),
+    };
+    setAuditLogs((prev) => [log, ...prev]);
+
     // Mandatory notification to all admins (in-app and email)
     const admins = profiles.filter((p) => ['Admin', 'Super-Admin'].includes(p.role) && p.status === 'Active');
     const notifs = await notifyAdminsApprovalRequired(
       admins,
       currentUser,
       'LINEAGE_SUBMISSION',
-      `Submitted ${relationType} connection to ${parent ? parent.first_name + ' ' + parent.last_name : 'Parent'}.`
+      `Submitted ${relationType} connection [${linId}] to ${parent ? parent.first_name + ' ' + parent.last_name : 'Parent'}.`
     );
 
     setNotifications((prev) => [...notifs, ...prev]);
@@ -596,15 +775,17 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       setNotifications((prev) => [notif, ...prev]);
     }
 
-    // Log Audit
+    // Log Audit with LIN trackable ID
     const log: AuditLog = {
       id: `log-${Date.now()}`,
+      trackable_id: edge.request_id || generateTrackableId('LIN'),
+      tag: 'Lineage-Approval',
       admin_id: currentUser.id,
       admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
       target_user_id: edge.child_id,
       target_user_name: child ? `${child.first_name} ${child.last_name}` : 'Member',
       action_type: 'LINEAGE_APPROVED',
-      metadata: { edge_id: edgeId, relation: edge.relation_type },
+      metadata: { edge_id: edgeId, request_id: edge.request_id, relation: edge.relation_type },
       created_at: new Date().toISOString(),
     };
     setAuditLogs((prev) => [log, ...prev]);
@@ -653,15 +834,17 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
 
     setNotifications((prev) => [notif, ...prev]);
 
-    // Audit Log
+    // Audit Log with REG trackable ID
     const log: AuditLog = {
       id: `log-${Date.now()}`,
+      trackable_id: user.registration_request_id || generateTrackableId('REG'),
+      tag: 'Account-Activation',
       admin_id: currentUser.id,
       admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
       target_user_id: user.id,
       target_user_name: `${user.first_name} ${user.last_name}`,
       action_type: 'ACCOUNT_ACTIVATED',
-      metadata: { family_id: user.family_id },
+      metadata: { family_id: user.family_id, registration_request_id: user.registration_request_id },
       created_at: new Date().toISOString(),
     };
     setAuditLogs((prev) => [log, ...prev]);
@@ -694,8 +877,10 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     date_of_birth: string;
   }): Promise<UserProfile> => {
     const newFamilyId = `OBEFF-00${profiles.length + 101}`;
+    const regTrackableId = generateTrackableId('REG');
     const newApplicant: UserProfile = {
       id: `user-${Date.now()}`,
+      registration_request_id: regTrackableId,
       family_id: newFamilyId,
       email: userData.email,
       first_name: userData.first_name,
@@ -712,6 +897,21 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     const updatedProfiles = [...profiles, newApplicant];
     setProfiles(updatedProfiles);
 
+    // Audit Log for new registration
+    const regLog: AuditLog = {
+      id: `log-${Date.now()}`,
+      trackable_id: regTrackableId,
+      tag: 'Account-Registration',
+      admin_id: newApplicant.id,
+      admin_name: `${newApplicant.first_name} ${newApplicant.last_name}`,
+      target_user_id: newApplicant.id,
+      target_user_name: `${newApplicant.first_name} ${newApplicant.last_name}`,
+      action_type: 'REGISTRATION_SUBMITTED',
+      metadata: { registration_request_id: regTrackableId, email: newApplicant.email },
+      created_at: new Date().toISOString(),
+    };
+    setAuditLogs((prev) => [regLog, ...prev]);
+
     // Notify all active Admins in-app and by email
     const activeAdmins = updatedProfiles.filter(
       (p) => ['Admin', 'Super-Admin'].includes(p.role) && p.status === 'Active'
@@ -720,7 +920,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       activeAdmins,
       newApplicant,
       'NEW_REGISTRATION',
-      `New family member registration submitted for ${newApplicant.first_name} ${newApplicant.last_name} (${newApplicant.phone}).`
+      `New family member registration [${regTrackableId}] submitted for ${newApplicant.first_name} ${newApplicant.last_name} (${newApplicant.phone}).`
     );
 
     const updatedNotifications = [...notifications, ...adminNotifs];
@@ -873,6 +1073,8 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
         deletePost,
         reportPost,
         quarantinePost,
+        appealQuarantine,
+        resolveAppeal,
         removePost,
         restorePost,
         dismissReport,

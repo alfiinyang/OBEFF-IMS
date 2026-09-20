@@ -34,6 +34,7 @@ export default function ApprovalsPage() {
     removePost,
     restorePost,
     dismissReport,
+    resolveAppeal,
   } = useFamily();
 
   const [activeTab, setActiveTab] = useState<'users' | 'lineage' | 'moderation'>('users');
@@ -43,6 +44,11 @@ export default function ApprovalsPage() {
   const [moderatingPostId, setModeratingPostId] = useState<string | null>(null);
   const [moderationAction, setModerationAction] = useState<'quarantine' | 'remove' | null>(null);
   const [moderationReason, setModerationReason] = useState('');
+
+  // Appeal Resolution modal state
+  const [resolvingAppealPostId, setResolvingAppealPostId] = useState<string | null>(null);
+  const [appealDecision, setAppealDecision] = useState<'accepted' | 'rejected' | null>(null);
+  const [appealResolutionNotes, setAppealResolutionNotes] = useState('');
 
   // Check URL search params on mount (e.g. ?tab=moderation)
   useEffect(() => {
@@ -57,14 +63,19 @@ export default function ApprovalsPage() {
   const pendingUsers = profiles.filter((p) => p.status === 'Pending');
   const pendingEdges = lineageEdges.filter((e) => e.approval_status === 'Pending');
 
-  // Reported or quarantined posts
+  // Reported or quarantined posts or posts with appeals
   const reportedPosts = posts.filter(
-    (p) => (p.reports && p.reports.some((r) => r.status === 'pending')) || p.status === 'quarantined'
+    (p) =>
+      (p.reports && p.reports.some((r) => r.status === 'pending')) ||
+      p.status === 'quarantined' ||
+      p.appeal?.status === 'pending'
   );
   const pendingReportCount = posts.reduce(
     (acc, p) => acc + (p.reports ? p.reports.filter((r) => r.status === 'pending').length : 0),
     0
   );
+  const pendingAppealsCount = posts.filter((p) => p.appeal?.status === 'pending').length;
+  const totalModerationPending = pendingReportCount + pendingAppealsCount;
 
   const handleApproveUser = async (id: string, name: string) => {
     await approveUser(id);
@@ -120,6 +131,23 @@ export default function ApprovalsPage() {
     setTimeout(() => setActionFeedback(''), 4000);
   };
 
+  const handleExecuteAppealResolution = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resolvingAppealPostId || !appealDecision) return;
+
+    await resolveAppeal(resolvingAppealPostId, appealDecision, appealResolutionNotes.trim() || undefined);
+    setActionFeedback(
+      appealDecision === 'accepted'
+        ? 'Appeal accepted! Post restored to public family feed.'
+        : 'Appeal rejected. Quarantine maintained and author notified.'
+    );
+
+    setResolvingAppealPostId(null);
+    setAppealDecision(null);
+    setAppealResolutionNotes('');
+    setTimeout(() => setActionFeedback(''), 4000);
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
@@ -130,7 +158,7 @@ export default function ApprovalsPage() {
             Admin Approvals & Moderation Queue
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Authenticate pending member accounts, verify family tree lineage links, and review reported content.
+            Authenticate pending member accounts, verify family tree lineage links, and review reported content & appeals.
           </p>
         </div>
 
@@ -160,7 +188,7 @@ export default function ApprovalsPage() {
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <span>Lineage Requests</span>
+            <span>Lineage Proposals</span>
             {pendingEdges.length > 0 && (
               <span className="px-1.5 py-0.2 text-[10px] bg-teal-500 text-white rounded-full">
                 {pendingEdges.length}
@@ -178,9 +206,9 @@ export default function ApprovalsPage() {
           >
             <Flag className="w-3.5 h-3.5 text-amber-500" />
             <span>Post Moderation</span>
-            {pendingReportCount > 0 && (
+            {totalModerationPending > 0 && (
               <span className="px-1.5 py-0.2 text-[10px] bg-rose-500 text-white rounded-full animate-pulse">
-                {pendingReportCount}
+                {totalModerationPending}
               </span>
             )}
           </button>
@@ -219,9 +247,16 @@ export default function ApprovalsPage() {
                       className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500/20"
                     />
                     <div>
-                      <h2 className="font-bold text-slate-900 text-sm">
-                        {user.first_name} {user.last_name}
-                      </h2>
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-bold text-slate-900 text-sm">
+                          {user.first_name} {user.last_name}
+                        </h2>
+                        {user.registration_request_id && (
+                          <span className="px-2 py-0.5 rounded-full font-mono text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
+                            Ref: {user.registration_request_id}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs font-mono font-semibold text-emerald-700">
                         Assigned ID: {user.family_id}
                       </p>
@@ -302,7 +337,7 @@ export default function ApprovalsPage() {
                         <GitPullRequest className="w-6 h-6" />
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-bold text-slate-900 text-sm">
                             {child ? `${child.first_name} ${child.last_name}` : 'Unknown Child'}
                           </span>
@@ -310,6 +345,11 @@ export default function ApprovalsPage() {
                           <span className="font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md text-xs border border-emerald-200">
                             {edge.relation_type}: {parent ? `${parent.first_name} ${parent.last_name}` : 'Unknown Parent'}
                           </span>
+                          {edge.request_id && (
+                            <span className="px-2 py-0.5 rounded-full font-mono text-[10px] font-bold bg-teal-100 text-teal-800 border border-teal-200">
+                              Ref: {edge.request_id}
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-400 mt-1">
                           Applicant ID: {child?.family_id} • Target Parent ID: {parent?.family_id}
@@ -453,6 +493,70 @@ export default function ApprovalsPage() {
                     )}
                   </div>
 
+                  {/* Quarantine Appeal Section */}
+                  {post.appeal && (
+                    <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-300 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full font-mono text-xs font-bold bg-amber-200/80 text-amber-950 border border-amber-300">
+                            Appeal ID: {post.appeal.id}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              post.appeal.status === 'pending'
+                                ? 'bg-amber-500 text-white animate-pulse'
+                                : post.appeal.status === 'accepted'
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-rose-600 text-white'
+                            }`}
+                          >
+                            {post.appeal.status === 'pending' ? 'Pending Review' : post.appeal.status}
+                          </span>
+                        </div>
+
+                        {post.appeal.status === 'pending' && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setResolvingAppealPostId(post.id);
+                                setAppealDecision('rejected');
+                              }}
+                              className="px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 rounded-xl text-xs font-semibold border border-rose-200 transition cursor-pointer"
+                            >
+                              Reject Appeal
+                            </button>
+                            <button
+                              onClick={() => {
+                                setResolvingAppealPostId(post.id);
+                                setAppealDecision('accepted');
+                              }}
+                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition cursor-pointer shadow-xs"
+                            >
+                              Accept Appeal & Restore
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-slate-700">
+                        <p className="font-semibold text-amber-950">
+                          Appeal statement from {post.appeal.appellant_name}:
+                        </p>
+                        <p className="italic bg-white p-3 rounded-xl border border-amber-200/80 mt-1 text-slate-800 leading-relaxed">
+                          &quot;{post.appeal.message}&quot;
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          Submitted on {new Date(post.appeal.created_at).toLocaleString()}
+                        </p>
+                        {post.appeal.resolution_notes && (
+                          <p className="text-[11px] text-amber-900 mt-1 font-medium bg-amber-100/60 p-2 rounded-lg">
+                            Resolution Note: {post.appeal.resolution_notes}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Reports Breakdown */}
                   {pendingReports.length > 0 && (
                     <div className="space-y-2 pt-2 border-t border-slate-100">
@@ -468,10 +572,15 @@ export default function ApprovalsPage() {
                             className="p-3 rounded-xl bg-rose-50/60 border border-rose-200/80 flex items-start justify-between gap-3 text-xs"
                           >
                             <div>
-                              <p className="font-semibold text-rose-900">
-                                Reported by {report.reporter_name}
-                              </p>
-                              <p className="text-slate-700 mt-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded-full font-mono text-[10px] font-bold bg-rose-200/70 text-rose-900 border border-rose-300">
+                                  Complaint ID: {report.id}
+                                </span>
+                                <p className="font-semibold text-rose-900">
+                                  Reported by {report.reporter_name}
+                                </p>
+                              </div>
+                              <p className="text-slate-700 mt-1">
                                 Reason: &quot;{report.reason}&quot;
                               </p>
                               <p className="text-[10px] text-slate-400 mt-1">
@@ -481,7 +590,7 @@ export default function ApprovalsPage() {
 
                             <button
                               onClick={() => handleDismissReport(post.id, report.id)}
-                              className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-600 rounded-lg text-[11px] font-semibold border border-slate-200 transition cursor-pointer"
+                              className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-600 rounded-lg text-[11px] font-semibold border border-slate-200 transition cursor-pointer flex-shrink-0"
                             >
                               Dismiss Report
                             </button>
@@ -560,6 +669,94 @@ export default function ApprovalsPage() {
                   }`}
                 >
                   Confirm {moderationAction === 'quarantine' ? 'Quarantine' : 'Removal'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Appeal Resolution Modal */}
+      {resolvingAppealPostId && appealDecision && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-200">
+            <form onSubmit={handleExecuteAppealResolution} className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2
+                    className={`w-5 h-5 ${
+                      appealDecision === 'accepted' ? 'text-emerald-600' : 'text-rose-600'
+                    }`}
+                  />
+                  <h3 className="font-bold text-sm text-slate-900">
+                    {appealDecision === 'accepted'
+                      ? 'Accept Appeal & Restore Post'
+                      : 'Reject Quarantine Appeal'}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResolvingAppealPostId(null);
+                    setAppealDecision(null);
+                    setAppealResolutionNotes('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-2xl text-xs text-slate-700 leading-relaxed border border-slate-200">
+                {appealDecision === 'accepted' ? (
+                  <p>
+                    Accepting this appeal will immediately un-quarantine the post and restore it to the live family feed. The author will be notified and an audit log tagged <strong>Appeal-Resolution</strong> will be created.
+                  </p>
+                ) : (
+                  <p>
+                    Rejecting this appeal will maintain the post quarantine. The author will be notified with your feedback note.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Resolution Decision Rationale / Notes
+                </label>
+                <textarea
+                  rows={3}
+                  value={appealResolutionNotes}
+                  onChange={(e) => setAppealResolutionNotes(e.target.value)}
+                  placeholder={
+                    appealDecision === 'accepted'
+                      ? 'e.g. Member provided adequate context; post conforms with community decorum.'
+                      : 'e.g. Appeal reviewed; contents still contain contentious claims requiring redaction.'
+                  }
+                  className="w-full text-xs p-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setResolvingAppealPostId(null);
+                    setAppealDecision(null);
+                    setAppealResolutionNotes('');
+                  }}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`px-4 py-2 rounded-xl text-white text-xs font-semibold transition cursor-pointer ${
+                    appealDecision === 'accepted'
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : 'bg-rose-600 hover:bg-rose-700'
+                  }`}
+                >
+                  Confirm {appealDecision === 'accepted' ? 'Acceptance' : 'Rejection'}
                 </button>
               </div>
             </form>
