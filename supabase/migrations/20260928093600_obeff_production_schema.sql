@@ -40,6 +40,14 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Ensure all columns exist even if table was created in an earlier iteration
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS registration_request_id TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+
 -- 3.2 LINEAGE EDGES (Parent-Child Connections)
 CREATE TABLE IF NOT EXISTS public.lineage_edges (
     id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
@@ -54,6 +62,9 @@ CREATE TABLE IF NOT EXISTS public.lineage_edges (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT unique_child_relation UNIQUE(child_id, relation_type)
 );
+
+ALTER TABLE public.lineage_edges ADD COLUMN IF NOT EXISTS request_id TEXT;
+ALTER TABLE public.lineage_edges ADD COLUMN IF NOT EXISTS notes TEXT;
 
 -- 3.3 POSTS TABLE (Regular Posts, Priority Announcements & Moderation)
 CREATE TABLE IF NOT EXISTS public.posts (
@@ -74,6 +85,13 @@ CREATE TABLE IF NOT EXISTS public.posts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'published';
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS quarantine_reason TEXT;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS quarantined_by UUID REFERENCES public.profiles(id);
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS quarantined_at TIMESTAMPTZ;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS appeal JSONB;
+ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS reports JSONB;
 
 -- 3.4 COMMENTS TABLE
 CREATE TABLE IF NOT EXISTS public.comments (
@@ -107,6 +125,8 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS action_text TEXT;
+
 -- 3.7 NOTIFICATION PREFERENCES TABLE
 CREATE TABLE IF NOT EXISTS public.notification_preferences (
     profile_id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -129,6 +149,11 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
     metadata JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS trackable_id TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS tag TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS admin_name TEXT;
+ALTER TABLE public.audit_logs ADD COLUMN IF NOT EXISTS target_user_name TEXT;
 
 -- 4. PERFORMANCE & LOOKUP INDEXES
 CREATE INDEX IF NOT EXISTS idx_profiles_family_id ON public.profiles(family_id);
@@ -171,7 +196,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- PROFILES POLICIES
--- Authenticated users can view member info; admins can view everything
+DROP POLICY IF EXISTS "Public profile view for authenticated active users" ON public.profiles;
 CREATE POLICY "Public profile view for authenticated active users"
 ON public.profiles FOR SELECT
 TO authenticated, anon
@@ -179,12 +204,13 @@ USING (
   status = 'Active' OR id = auth.uid() OR public.is_admin()
 );
 
--- Users can insert their own profile during signup
+DROP POLICY IF EXISTS "Users can insert their own profile" ON public.profiles;
 CREATE POLICY "Users can insert their own profile"
 ON public.profiles FOR INSERT
 TO authenticated, anon
 WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
 CREATE POLICY "Users can update their own profile"
 ON public.profiles FOR UPDATE
 TO authenticated
@@ -192,6 +218,7 @@ USING (id = auth.uid() OR public.is_admin())
 WITH CHECK (id = auth.uid() OR public.is_admin());
 
 -- LINEAGE EDGES POLICIES
+DROP POLICY IF EXISTS "View approved lineage or own pending submissions" ON public.lineage_edges;
 CREATE POLICY "View approved lineage or own pending submissions"
 ON public.lineage_edges FOR SELECT
 TO authenticated
@@ -199,11 +226,13 @@ USING (
   approval_status = 'Approved' OR child_id = auth.uid() OR public.is_admin()
 );
 
+DROP POLICY IF EXISTS "Members can submit their own lineage" ON public.lineage_edges;
 CREATE POLICY "Members can submit their own lineage"
 ON public.lineage_edges FOR INSERT
 TO authenticated
 WITH CHECK (child_id = auth.uid() OR public.is_admin());
 
+DROP POLICY IF EXISTS "Admins can update lineage status" ON public.lineage_edges;
 CREATE POLICY "Admins can update lineage status"
 ON public.lineage_edges FOR UPDATE
 TO authenticated
@@ -211,6 +240,7 @@ USING (public.is_admin())
 WITH CHECK (public.is_admin());
 
 -- POSTS POLICIES
+DROP POLICY IF EXISTS "Active members can view published posts; authors & admins can view quarantined" ON public.posts;
 CREATE POLICY "Active members can view published posts; authors & admins can view quarantined"
 ON public.posts FOR SELECT
 TO authenticated
@@ -218,6 +248,7 @@ USING (
   status = 'published' OR author_id = auth.uid() OR public.is_admin()
 );
 
+DROP POLICY IF EXISTS "Active members can create posts (Admins can create announcements)" ON public.posts;
 CREATE POLICY "Active members can create posts (Admins can create announcements)"
 ON public.posts FOR INSERT
 TO authenticated
@@ -226,33 +257,39 @@ WITH CHECK (
   (is_admin_announcement = FALSE OR public.is_admin())
 );
 
+DROP POLICY IF EXISTS "Authors or Admins can update posts" ON public.posts;
 CREATE POLICY "Authors or Admins can update posts"
 ON public.posts FOR UPDATE
 TO authenticated
 USING (auth.uid() = author_id OR public.is_admin());
 
+DROP POLICY IF EXISTS "Authors or Admins can delete posts" ON public.posts;
 CREATE POLICY "Authors or Admins can delete posts"
 ON public.posts FOR DELETE
 TO authenticated
 USING (auth.uid() = author_id OR public.is_admin());
 
 -- COMMENTS POLICIES
+DROP POLICY IF EXISTS "Active members can view comments" ON public.comments;
 CREATE POLICY "Active members can view comments"
 ON public.comments FOR SELECT
 TO authenticated
 USING (true);
 
+DROP POLICY IF EXISTS "Active members can add comments" ON public.comments;
 CREATE POLICY "Active members can add comments"
 ON public.comments FOR INSERT
 TO authenticated
 WITH CHECK (auth.uid() = author_id);
 
 -- REACTIONS POLICIES
+DROP POLICY IF EXISTS "Anyone can view reactions" ON public.reactions;
 CREATE POLICY "Anyone can view reactions"
 ON public.reactions FOR SELECT
 TO authenticated
 USING (true);
 
+DROP POLICY IF EXISTS "Users can toggle reactions" ON public.reactions;
 CREATE POLICY "Users can toggle reactions"
 ON public.reactions FOR ALL
 TO authenticated
@@ -260,6 +297,7 @@ USING (user_id = auth.uid())
 WITH CHECK (user_id = auth.uid());
 
 -- NOTIFICATIONS POLICIES
+DROP POLICY IF EXISTS "Users read and update their own notifications" ON public.notifications;
 CREATE POLICY "Users read and update their own notifications"
 ON public.notifications FOR ALL
 TO authenticated
@@ -267,6 +305,7 @@ USING (recipient_id = auth.uid())
 WITH CHECK (recipient_id = auth.uid());
 
 -- NOTIFICATION PREFERENCES POLICIES
+DROP POLICY IF EXISTS "Users view and update own preferences" ON public.notification_preferences;
 CREATE POLICY "Users view and update own preferences"
 ON public.notification_preferences FOR ALL
 TO authenticated
@@ -274,6 +313,7 @@ USING (profile_id = auth.uid())
 WITH CHECK (profile_id = auth.uid());
 
 -- AUDIT LOGS POLICIES
+DROP POLICY IF EXISTS "Admins can view and write audit logs" ON public.audit_logs;
 CREATE POLICY "Admins can view and write audit logs"
 ON public.audit_logs FOR ALL
 TO authenticated
