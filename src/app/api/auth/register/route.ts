@@ -101,8 +101,8 @@ export async function POST(request: Request) {
             await adminClient.from('audit_logs').insert({
               trackable_id: registration_request_id,
               tag: 'Account-Registration',
-              admin_id: userId,
-              admin_name: `${first_name} ${last_name}`,
+              admin_id: null,
+              admin_name: 'Self-Registration',
               target_user_id: userId,
               target_user_name: `${first_name} ${last_name}`,
               action_type: 'REGISTRATION_SUBMITTED',

@@ -13,12 +13,23 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- 2. SEQUENCES FOR UNIQUE FAMILY ID GENERATION
 CREATE SEQUENCE IF NOT EXISTS family_id_seq START WITH 101;
 
-CREATE OR REPLACE FUNCTION generate_family_id()
-RETURNS TEXT AS $$
+CREATE OR REPLACE FUNCTION public.generate_family_id()
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    candidate_id TEXT;
 BEGIN
-    RETURN 'OBEFF-' || LPAD(nextval('family_id_seq')::TEXT, 5, '0');
+    LOOP
+        candidate_id := 'OBEFF-' || LPAD(nextval('public.family_id_seq')::TEXT, 5, '0');
+        IF NOT EXISTS (SELECT 1 FROM public.profiles WHERE family_id = candidate_id) THEN
+            RETURN candidate_id;
+        END IF;
+    END LOOP;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- 3. CORE TABLES
 
@@ -322,14 +333,42 @@ WITH CHECK (public.is_admin());
 
 -- 6. AUTOMATED USER REGISTRATION TRIGGER
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 DECLARE
     new_family_id TEXT;
     reg_id TEXT;
+    user_first_name TEXT;
+    user_last_name TEXT;
+    user_phone TEXT;
+    user_address TEXT;
+    parsed_dob DATE;
 BEGIN
-    new_family_id := generate_family_id();
-    reg_id := COALESCE(NEW.raw_user_meta_data->>'registration_request_id', 'REG-' || LPAD((FLOOR(RANDOM() * 90000) + 10000)::TEXT, 5, '0'));
+    -- Resolve family ID and tracking registration ID
+    new_family_id := public.generate_family_id();
+    reg_id := COALESCE(
+        NULLIF(TRIM(NEW.raw_user_meta_data->>'registration_request_id'), ''),
+        'REG-' || LPAD((FLOOR(RANDOM() * 90000) + 10000)::TEXT, 5, '0')
+    );
 
+    user_first_name := COALESCE(NULLIF(TRIM(NEW.raw_user_meta_data->>'first_name'), ''), 'Family');
+    user_last_name := COALESCE(NULLIF(TRIM(NEW.raw_user_meta_data->>'last_name'), ''), 'Member');
+    user_phone := NULLIF(TRIM(NEW.raw_user_meta_data->>'phone'), '');
+    user_address := NULLIF(TRIM(NEW.raw_user_meta_data->>'address'), '');
+
+    -- Safe date parsing
+    BEGIN
+        IF NEW.raw_user_meta_data->>'date_of_birth' IS NOT NULL AND NEW.raw_user_meta_data->>'date_of_birth' <> '' THEN
+            parsed_dob := (NEW.raw_user_meta_data->>'date_of_birth')::DATE;
+        END IF;
+    EXCEPTION WHEN OTHERS THEN
+        parsed_dob := NULL;
+    END;
+
+    -- 1. Insert Profile (Core requirement)
     INSERT INTO public.profiles (
         id,
         family_id,
@@ -347,15 +386,11 @@ BEGIN
         new_family_id,
         reg_id,
         NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'first_name', 'Family'),
-        COALESCE(NEW.raw_user_meta_data->>'last_name', 'Member'),
-        NEW.raw_user_meta_data->>'phone',
-        NEW.raw_user_meta_data->>'address',
-        CASE 
-            WHEN NEW.raw_user_meta_data->>'date_of_birth' IS NOT NULL AND NEW.raw_user_meta_data->>'date_of_birth' <> '' 
-            THEN (NEW.raw_user_meta_data->>'date_of_birth')::DATE 
-            ELSE NULL 
-        END,
+        user_first_name,
+        user_last_name,
+        user_phone,
+        user_address,
+        parsed_dob,
         'Member',
         'Pending'
     )
@@ -367,55 +402,75 @@ BEGIN
         address = EXCLUDED.address,
         date_of_birth = EXCLUDED.date_of_birth;
 
-    -- Create default notification preferences
-    INSERT INTO public.notification_preferences (profile_id)
-    VALUES (NEW.id)
-    ON CONFLICT (profile_id) DO NOTHING;
+    -- 2. Non-blocking auxiliary insertions: notification preferences
+    BEGIN
+        INSERT INTO public.notification_preferences (profile_id)
+        VALUES (NEW.id)
+        ON CONFLICT (profile_id) DO NOTHING;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'notification_preferences insert shielded: %', SQLERRM;
+    END;
 
-    -- Create registration audit log
-    INSERT INTO public.audit_logs (
-        trackable_id,
-        tag,
-        admin_id,
-        admin_name,
-        target_user_id,
-        target_user_name,
-        action_type,
-        metadata
-    ) VALUES (
-        reg_id,
-        'Account-Registration',
-        NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'first_name', 'New') || ' ' || COALESCE(NEW.raw_user_meta_data->>'last_name', 'Applicant'),
-        NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'first_name', 'New') || ' ' || COALESCE(NEW.raw_user_meta_data->>'last_name', 'Applicant'),
-        'REGISTRATION_SUBMITTED',
-        jsonb_build_object('email', NEW.email, 'registration_request_id', reg_id)
-    );
+    -- 3. Non-blocking auxiliary insertions: registration audit log
+    BEGIN
+        INSERT INTO public.audit_logs (
+            trackable_id,
+            tag,
+            admin_id,
+            admin_name,
+            target_user_id,
+            target_user_name,
+            action_type,
+            metadata
+        ) VALUES (
+            reg_id,
+            'Account-Registration',
+            NULL,
+            'System',
+            NEW.id,
+            user_first_name || ' ' || user_last_name,
+            'REGISTRATION_SUBMITTED',
+            jsonb_build_object('email', NEW.email, 'registration_request_id', reg_id)
+        );
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'audit_logs insert shielded: %', SQLERRM;
+    END;
 
-    -- Notify Admins of pending signup
-    INSERT INTO public.notifications (
-        recipient_id,
-        type,
-        title,
-        message,
-        action_url
-    )
-    SELECT
-        p.id,
-        'Approval',
-        'New Member Registration',
-        COALESCE(NEW.raw_user_meta_data->>'first_name', 'A new applicant') || ' ' || COALESCE(NEW.raw_user_meta_data->>'last_name', '') || ' registered and is awaiting approval.',
-        '/admin/approvals'
-    FROM public.profiles p
-    WHERE p.role IN ('Admin', 'Super-Admin');
+    -- 4. Non-blocking auxiliary insertions: admin pending notification
+    BEGIN
+        INSERT INTO public.notifications (
+            recipient_id,
+            type,
+            title,
+            message,
+            action_url
+        )
+        SELECT
+            p.id,
+            'Approval',
+            'New Member Registration',
+            user_first_name || ' ' || user_last_name || ' registered and is awaiting approval.',
+            '/admin/approvals'
+        FROM public.profiles p
+        WHERE p.role IN ('Admin', 'Super-Admin');
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'notifications insert shielded: %', SQLERRM;
+    END;
 
     RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+    -- Fallback safety shield: ensures auth.users creation never throws "Database error creating new user"
+    RAISE WARNING 'handle_new_user critical error caught and shielded: %', SQLERRM;
+    RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- Trigger to execute on Supabase Auth user creation
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Grant execute permissions explicitly
+GRANT EXECUTE ON FUNCTION public.handle_new_user() TO postgres, anon, authenticated, service_role, supabase_auth_admin;
+GRANT EXECUTE ON FUNCTION public.generate_family_id() TO postgres, anon, authenticated, service_role, supabase_auth_admin;
