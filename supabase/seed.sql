@@ -85,11 +85,12 @@ BEGIN
 
     -- 2. Populate / Update Profiles with designated Family IDs and Roles
     INSERT INTO public.profiles (
-        id, family_id, first_name, last_name, phone, address, date_of_birth, role, status
+        id, family_id, email, first_name, last_name, phone, address, date_of_birth, role, status
     ) VALUES 
     (
         super_admin_id,
         'OBEFF-00001',
+        'admin@obeff.org',
         'Chief',
         'Obeff',
         '+234 803 000 0001',
@@ -101,6 +102,7 @@ BEGIN
     (
         extra_admin_id,
         'OBEFF-00002',
+        'edet.admin@obeff.org',
         'Dr. Edet',
         'Obeff',
         '+234 805 555 6666',
@@ -112,6 +114,7 @@ BEGIN
     (
         member_1_id,
         'OBEFF-00003',
+        'kufre.member@obeff.org',
         'Kufre',
         'Obeff',
         '+44 7700 900123',
@@ -123,6 +126,7 @@ BEGIN
     (
         member_2_id,
         'OBEFF-00004',
+        'maria.member@obeff.org',
         'Maria',
         'Obeff',
         '+234 802 333 4444',
@@ -132,6 +136,7 @@ BEGIN
         'Active'
     )
     ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
         role = EXCLUDED.role,
         status = EXCLUDED.status,
         family_id = EXCLUDED.family_id;

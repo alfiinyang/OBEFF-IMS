@@ -49,11 +49,12 @@ export default function SignupPage() {
     const fullPhoneNumber = `${formData.countryCode} ${formData.phoneNumber.trim()}`;
 
     try {
-      // Register applicant directly in state context & local database
+      // Register applicant with Supabase and state context
       await registerUser({
         first_name: formData.firstName,
         last_name: formData.lastName,
         email: formData.email,
+        password: formData.password,
         phone: fullPhoneNumber,
         address: formData.address,
         date_of_birth: formData.dateOfBirth,

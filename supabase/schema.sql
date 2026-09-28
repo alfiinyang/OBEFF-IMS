@@ -23,6 +23,8 @@ $$ LANGUAGE plpgsql;
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     family_id TEXT UNIQUE NOT NULL DEFAULT generate_family_id(),
+    registration_request_id TEXT,
+    email TEXT,
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
     phone TEXT,
@@ -37,7 +39,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 
 -- 3.2 LINEAGE EDGES (Parent-Child Connections)
 CREATE TABLE IF NOT EXISTS public.lineage_edges (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    request_id TEXT,
     child_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     parent_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     relation_type TEXT NOT NULL CHECK (relation_type IN ('Father', 'Mother')),
@@ -49,14 +52,20 @@ CREATE TABLE IF NOT EXISTS public.lineage_edges (
     CONSTRAINT unique_child_relation UNIQUE(child_id, relation_type)
 );
 
--- 3.3 POSTS TABLE (Regular Posts & Admin Priority Announcements)
+-- 3.3 POSTS TABLE (Regular Posts, Priority Announcements & Moderation)
 CREATE TABLE IF NOT EXISTS public.posts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     author_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     media_url TEXT,
     is_admin_announcement BOOLEAN NOT NULL DEFAULT FALSE,
     is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+    status TEXT NOT NULL DEFAULT 'published' CHECK (status IN ('published', 'quarantined', 'removed')),
+    quarantine_reason TEXT,
+    quarantined_by UUID REFERENCES public.profiles(id),
+    quarantined_at TIMESTAMPTZ,
+    appeal JSONB,
+    reports JSONB,
     likes_count INT NOT NULL DEFAULT 0,
     comments_count INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -65,8 +74,8 @@ CREATE TABLE IF NOT EXISTS public.posts (
 
 -- 3.4 COMMENTS TABLE
 CREATE TABLE IF NOT EXISTS public.comments (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    post_id UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    post_id TEXT NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
     author_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -74,8 +83,8 @@ CREATE TABLE IF NOT EXISTS public.comments (
 
 -- 3.5 POST REACTIONS / LIKES
 CREATE TABLE IF NOT EXISTS public.reactions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    post_id UUID NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    post_id TEXT NOT NULL REFERENCES public.posts(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     reaction_type TEXT NOT NULL DEFAULT 'like',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -84,12 +93,13 @@ CREATE TABLE IF NOT EXISTS public.reactions (
 
 -- 3.6 NOTIFICATIONS TABLE
 CREATE TABLE IF NOT EXISTS public.notifications (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     recipient_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     type TEXT NOT NULL CHECK (type IN ('Approval', 'System', 'Announcement', 'Engagement')),
     title TEXT NOT NULL,
     message TEXT NOT NULL,
     action_url TEXT,
+    action_text TEXT,
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -105,9 +115,13 @@ CREATE TABLE IF NOT EXISTS public.notification_preferences (
 
 -- 3.8 AUDIT LOGS TABLE
 CREATE TABLE IF NOT EXISTS public.audit_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    admin_id UUID NOT NULL REFERENCES public.profiles(id),
-    target_user_id UUID REFERENCES public.profiles(id),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
+    trackable_id TEXT,
+    tag TEXT,
+    admin_id UUID,
+    admin_name TEXT,
+    target_user_id UUID,
+    target_user_name TEXT,
     action_type TEXT NOT NULL,
     metadata JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -117,16 +131,19 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 CREATE INDEX IF NOT EXISTS idx_profiles_family_id ON public.profiles(family_id);
 CREATE INDEX IF NOT EXISTS idx_profiles_status ON public.profiles(status);
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
 
 CREATE INDEX IF NOT EXISTS idx_lineage_child ON public.lineage_edges(child_id);
 CREATE INDEX IF NOT EXISTS idx_lineage_parent ON public.lineage_edges(parent_id);
 CREATE INDEX IF NOT EXISTS idx_lineage_status ON public.lineage_edges(approval_status);
 
 CREATE INDEX IF NOT EXISTS idx_posts_pinned_announcement ON public.posts(is_pinned DESC, is_admin_announcement DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_status ON public.posts(status);
 CREATE INDEX IF NOT EXISTS idx_comments_post ON public.comments(post_id, created_at ASC);
 
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient_read ON public.notifications(recipient_id, is_read, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_admin_created ON public.audit_logs(admin_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_trackable_id ON public.audit_logs(trackable_id);
 
 -- 5. ROW-LEVEL SECURITY (RLS) POLICIES
 
@@ -151,13 +168,19 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- PROFILES POLICIES
--- Authenticated users can view basic member info; admins can view everything
+-- Authenticated users can view member info; admins can view everything
 CREATE POLICY "Public profile view for authenticated active users"
 ON public.profiles FOR SELECT
-TO authenticated
+TO authenticated, anon
 USING (
   status = 'Active' OR id = auth.uid() OR public.is_admin()
 );
+
+-- Users can insert their own profile during signup
+CREATE POLICY "Users can insert their own profile"
+ON public.profiles FOR INSERT
+TO authenticated, anon
+WITH CHECK (true);
 
 CREATE POLICY "Users can update their own profile"
 ON public.profiles FOR UPDATE
@@ -185,11 +208,11 @@ USING (public.is_admin())
 WITH CHECK (public.is_admin());
 
 -- POSTS POLICIES
-CREATE POLICY "Active members can view posts"
+CREATE POLICY "Active members can view published posts; authors & admins can view quarantined"
 ON public.posts FOR SELECT
 TO authenticated
 USING (
-  EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND status = 'Active')
+  status = 'published' OR author_id = auth.uid() OR public.is_admin()
 );
 
 CREATE POLICY "Active members can create posts (Admins can create announcements)"
@@ -200,7 +223,7 @@ WITH CHECK (
   (is_admin_announcement = FALSE OR public.is_admin())
 );
 
-CREATE POLICY "Authors or Admins can update/delete posts"
+CREATE POLICY "Authors or Admins can update posts"
 ON public.posts FOR UPDATE
 TO authenticated
 USING (auth.uid() = author_id OR public.is_admin());
@@ -209,6 +232,29 @@ CREATE POLICY "Authors or Admins can delete posts"
 ON public.posts FOR DELETE
 TO authenticated
 USING (auth.uid() = author_id OR public.is_admin());
+
+-- COMMENTS POLICIES
+CREATE POLICY "Active members can view comments"
+ON public.comments FOR SELECT
+TO authenticated
+USING (true);
+
+CREATE POLICY "Active members can add comments"
+ON public.comments FOR INSERT
+TO authenticated
+WITH CHECK (auth.uid() = author_id);
+
+-- REACTIONS POLICIES
+CREATE POLICY "Anyone can view reactions"
+ON public.reactions FOR SELECT
+TO authenticated
+USING (true);
+
+CREATE POLICY "Users can toggle reactions"
+ON public.reactions FOR ALL
+TO authenticated
+USING (user_id = auth.uid())
+WITH CHECK (user_id = auth.uid());
 
 -- NOTIFICATIONS POLICIES
 CREATE POLICY "Users read and update their own notifications"
@@ -225,22 +271,27 @@ USING (profile_id = auth.uid())
 WITH CHECK (profile_id = auth.uid());
 
 -- AUDIT LOGS POLICIES
-CREATE POLICY "Admins can view audit logs"
-ON public.audit_logs FOR SELECT
+CREATE POLICY "Admins can view and write audit logs"
+ON public.audit_logs FOR ALL
 TO authenticated
-USING (public.is_admin());
+USING (public.is_admin())
+WITH CHECK (public.is_admin());
 
 -- 6. AUTOMATED USER REGISTRATION TRIGGER
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
     new_family_id TEXT;
+    reg_id TEXT;
 BEGIN
     new_family_id := generate_family_id();
+    reg_id := COALESCE(NEW.raw_user_meta_data->>'registration_request_id', 'REG-' || LPAD((FLOOR(RANDOM() * 90000) + 10000)::TEXT, 5, '0'));
 
     INSERT INTO public.profiles (
         id,
         family_id,
+        registration_request_id,
+        email,
         first_name,
         last_name,
         phone,
@@ -251,18 +302,53 @@ BEGIN
     ) VALUES (
         NEW.id,
         new_family_id,
+        reg_id,
+        NEW.email,
         COALESCE(NEW.raw_user_meta_data->>'first_name', 'Family'),
         COALESCE(NEW.raw_user_meta_data->>'last_name', 'Member'),
         NEW.raw_user_meta_data->>'phone',
         NEW.raw_user_meta_data->>'address',
-        (NEW.raw_user_meta_data->>'date_of_birth')::DATE,
+        CASE 
+            WHEN NEW.raw_user_meta_data->>'date_of_birth' IS NOT NULL AND NEW.raw_user_meta_data->>'date_of_birth' <> '' 
+            THEN (NEW.raw_user_meta_data->>'date_of_birth')::DATE 
+            ELSE NULL 
+        END,
         'Member',
         'Pending'
-    );
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
+        first_name = EXCLUDED.first_name,
+        last_name = EXCLUDED.last_name,
+        phone = EXCLUDED.phone,
+        address = EXCLUDED.address,
+        date_of_birth = EXCLUDED.date_of_birth;
 
     -- Create default notification preferences
     INSERT INTO public.notification_preferences (profile_id)
-    VALUES (NEW.id);
+    VALUES (NEW.id)
+    ON CONFLICT (profile_id) DO NOTHING;
+
+    -- Create registration audit log
+    INSERT INTO public.audit_logs (
+        trackable_id,
+        tag,
+        admin_id,
+        admin_name,
+        target_user_id,
+        target_user_name,
+        action_type,
+        metadata
+    ) VALUES (
+        reg_id,
+        'Account-Registration',
+        NEW.id,
+        COALESCE(NEW.raw_user_meta_data->>'first_name', 'New') || ' ' || COALESCE(NEW.raw_user_meta_data->>'last_name', 'Applicant'),
+        NEW.id,
+        COALESCE(NEW.raw_user_meta_data->>'first_name', 'New') || ' ' || COALESCE(NEW.raw_user_meta_data->>'last_name', 'Applicant'),
+        'REGISTRATION_SUBMITTED',
+        jsonb_build_object('email', NEW.email, 'registration_request_id', reg_id)
+    );
 
     -- Notify Admins of pending signup
     INSERT INTO public.notifications (
@@ -290,9 +376,3 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- 7. BOOTSTRAP FIRST SUPER-ADMIN HELPER SCRIPT
--- Execute this once in Supabase SQL editor after creating your initial account:
--- UPDATE public.profiles
--- SET role = 'Super-Admin', status = 'Active'
--- WHERE id = (SELECT id FROM auth.users WHERE email = 'your-admin-email@domain.com');

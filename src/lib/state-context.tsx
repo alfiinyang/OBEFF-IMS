@@ -23,6 +23,7 @@ import {
   INITIAL_AUDIT_LOGS,
 } from './mock-data';
 import { notifyUserAccountModified, notifyAdminsApprovalRequired, dispatchNotification } from './notifications';
+import { createClient } from './supabase/client';
 
 interface FamilyContextType {
   currentUser: UserProfile;
@@ -58,6 +59,7 @@ interface FamilyContextType {
     first_name: string;
     last_name: string;
     email: string;
+    password?: string;
     phone: string;
     address: string;
     date_of_birth: string;
@@ -96,16 +98,71 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentUser.id]);
 
-  // Hydrate from localStorage or local database on mount
+  // Hydrate from Supabase (or localStorage/local database fallback) on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const sessionEmail = localStorage.getItem('obeff_session_email');
+      const supabase = createClient();
+
+      if (supabase) {
+        // 1. Fetch real profiles from Supabase
+        supabase
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .then(
+            ({ data, error }) => {
+              if (!error && data && data.length > 0) {
+                setProfiles(data);
+                if (sessionEmail) {
+                  const matched = data.find(
+                    (p: UserProfile) => p.email.toLowerCase() === sessionEmail.toLowerCase()
+                  );
+                  if (matched) setCurrentUser(matched);
+                }
+              }
+            },
+            () => {}
+          );
+
+        // 2. Fetch real posts from Supabase
+        supabase
+          .from('posts')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .then(
+            ({ data, error }) => {
+              if (!error && data && data.length > 0) {
+                setPosts(data);
+              }
+            },
+            () => {}
+          );
+
+        // 3. Check active Supabase Auth session
+        supabase.auth.getUser().then(({ data: authData }) => {
+          if (authData?.user) {
+            supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', authData.user.id)
+              .single()
+              .then(
+                ({ data: profile }) => {
+                  if (profile) setCurrentUser(profile);
+                },
+                () => {}
+              );
+          }
+        }, () => {});
+      }
+
       const cached = localStorage.getItem('obeff_local_db');
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
           if (parsed.profiles) {
-            setProfiles(parsed.profiles);
+            setProfiles((prev) => (prev.length <= 4 ? parsed.profiles : prev));
             if (sessionEmail) {
               const matched = parsed.profiles.find(
                 (p: UserProfile) => p.email.toLowerCase() === sessionEmail.toLowerCase()
@@ -113,7 +170,7 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
               if (matched) setCurrentUser(matched);
             }
           }
-          if (parsed.posts) setPosts(parsed.posts);
+          if (parsed.posts) setPosts((prev) => (prev.length <= 2 ? parsed.posts : prev));
           if (parsed.lineage_edges) setLineageEdges(parsed.lineage_edges);
           if (parsed.notifications) setNotifications(parsed.notifications);
           if (parsed.audit_logs) setAuditLogs(parsed.audit_logs);
@@ -123,8 +180,8 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
           .then((res) => res.json())
           .then((data) => {
             if (data.profiles && data.profiles.length > 0) {
-              setProfiles(data.profiles);
-              setPosts(data.posts);
+              setProfiles((prev) => (prev.length <= 4 ? data.profiles : prev));
+              setPosts((prev) => (prev.length <= 2 ? data.posts : prev));
               setLineageEdges(data.lineage_edges);
               setNotifications(data.notifications);
               setAuditLogs(data.audit_logs);
@@ -231,6 +288,22 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
 
     setPosts((prev) => [newPost, ...prev]);
 
+    // Sync to Supabase posts table
+    const supabase = createClient();
+    if (supabase) {
+      supabase.from('posts').insert({
+        id: newPost.id,
+        author_id: currentUser.id,
+        content,
+        media_url: mediaUrl,
+        is_admin_announcement: isAnnouncement,
+        is_pinned: pinned,
+        status: 'published',
+        likes_count: 0,
+        comments_count: 0,
+      }).then(undefined, () => {});
+    }
+
     // If official announcement, broadcast to members who enabled announcement emails
     if (isAnnouncement) {
       const activeMembers = profiles.filter(
@@ -283,6 +356,12 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
 
     // 1. Permanently delete from all active application records
     setPosts((prev) => prev.filter((p) => p.id !== postId));
+
+    // Sync deletion to Supabase
+    const supabase = createClient();
+    if (supabase) {
+      supabase.from('posts').delete().eq('id', postId).then(undefined, () => {});
+    }
 
     // 2. Immutable audit log tagged Content-Deletion
     const now = new Date().toISOString();
@@ -408,6 +487,17 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
           : p
       )
     );
+
+    // Sync quarantine to Supabase
+    const supabase = createClient();
+    if (supabase) {
+      supabase.from('posts').update({
+        status: 'quarantined',
+        quarantine_reason: reason,
+        quarantined_by: currentUser.id,
+        quarantined_at: now,
+      }).eq('id', postId).then(undefined, () => {});
+    }
 
     // Notify the author in-app and by email
     const author = profiles.find((p) => p.id === post.author_id);
@@ -824,6 +914,12 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       prev.map((p) => (p.id === userId ? { ...p, status: 'Active' } : p))
     );
 
+    // Sync status change to Supabase
+    const supabase = createClient();
+    if (supabase) {
+      supabase.from('profiles').update({ status: 'Active' }).eq('id', userId).then(undefined, () => {});
+    }
+
     // Mandatory In-app and Email notification to the approved user
     const notif = await notifyUserAccountModified(
       user,
@@ -848,6 +944,19 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       created_at: new Date().toISOString(),
     };
     setAuditLogs((prev) => [log, ...prev]);
+
+    if (supabase) {
+      supabase.from('audit_logs').insert({
+        trackable_id: log.trackable_id,
+        tag: log.tag,
+        admin_id: currentUser.id,
+        admin_name: `${currentUser.first_name} ${currentUser.last_name}`,
+        target_user_id: user.id,
+        target_user_name: `${user.first_name} ${user.last_name}`,
+        action_type: log.action_type,
+        metadata: log.metadata,
+      }).then(undefined, () => {});
+    }
   };
 
   const rejectUser = async (userId: string, reason = 'Registration details could not be authenticated.') => {
@@ -855,6 +964,12 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     if (!user) return;
 
     setProfiles((prev) => prev.filter((p) => p.id !== userId));
+
+    // Sync deletion to Supabase
+    const supabase = createClient();
+    if (supabase) {
+      supabase.from('profiles').delete().eq('id', userId).then(undefined, () => {});
+    }
 
     await dispatchNotification({
       recipient: user,
@@ -872,14 +987,72 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     first_name: string;
     last_name: string;
     email: string;
+    password?: string;
     phone: string;
     address: string;
     date_of_birth: string;
   }): Promise<UserProfile> => {
-    const newFamilyId = `OBEFF-00${profiles.length + 101}`;
     const regTrackableId = generateTrackableId('REG');
+    let assignedUserId = `user-${Date.now()}`;
+    const newFamilyId = `OBEFF-00${profiles.length + 101}`;
+
+    // 1. Server-side registration (interacts with Supabase using Service Role Key or Anon Key)
+    try {
+      const apiRes = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: userData.email,
+          password: userData.password,
+          first_name: userData.first_name,
+          last_name: userData.last_name,
+          phone: userData.phone,
+          address: userData.address,
+          date_of_birth: userData.date_of_birth,
+          registration_request_id: regTrackableId,
+        }),
+      });
+
+      const apiJson = await apiRes.json();
+      if (!apiRes.ok || (apiJson && apiJson.error)) {
+        throw new Error(apiJson.error || 'Registration failed');
+      }
+
+      if (apiJson.user?.id) {
+        assignedUserId = apiJson.user.id;
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err;
+      }
+      // If network / fetch issue or offline, attempt direct client Supabase signUp
+      const supabase = createClient();
+      if (supabase && userData.password) {
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: userData.email,
+          password: userData.password,
+          options: {
+            data: {
+              first_name: userData.first_name,
+              last_name: userData.last_name,
+              phone: userData.phone,
+              address: userData.address,
+              date_of_birth: userData.date_of_birth,
+              registration_request_id: regTrackableId,
+            },
+          },
+        });
+        if (authError) {
+          throw new Error(authError.message);
+        }
+        if (authData.user?.id) {
+          assignedUserId = authData.user.id;
+        }
+      }
+    }
+
     const newApplicant: UserProfile = {
-      id: `user-${Date.now()}`,
+      id: assignedUserId,
       registration_request_id: regTrackableId,
       family_id: newFamilyId,
       email: userData.email,
@@ -959,6 +1132,11 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       prev.map((p) => (p.id === userId ? { ...p, role: newRole } : p))
     );
 
+    const supabase = createClient();
+    if (supabase) {
+      supabase.from('profiles').update({ role: newRole }).eq('id', userId).then(undefined, () => {});
+    }
+
     // Mandatory Notification
     const notif = await notifyUserAccountModified(
       user,
@@ -990,6 +1168,11 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
       prev.map((p) => (p.id === userId ? { ...p, status: newStatus } : p))
     );
 
+    const supabase = createClient();
+    if (supabase) {
+      supabase.from('profiles').update({ status: newStatus }).eq('id', userId).then(undefined, () => {});
+    }
+
     // Mandatory Notification
     const notif = await notifyUserAccountModified(
       user,
@@ -1018,13 +1201,68 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
     setProfiles((prev) =>
       prev.map((p) => (p.id === currentUser.id ? { ...p, ...data } : p))
     );
+
+    const supabase = createClient();
+    if (supabase) {
+      supabase.from('profiles').update(data).eq('id', currentUser.id).then(undefined, () => {});
+    }
   };
 
   const login = async (
     email: string,
     password?: string
   ): Promise<{ success: boolean; error?: string; status?: string }> => {
-    const user = profiles.find((p) => p.email.toLowerCase() === email.trim().toLowerCase());
+    const trimmedEmail = email.trim().toLowerCase();
+    const supabase = createClient();
+
+    // 1. Try Supabase Auth if client is available
+    if (supabase && password) {
+      try {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: trimmedEmail,
+          password,
+        });
+
+        if (!authError && authData.user) {
+          // Fetch user profile from Supabase
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', authData.user.id)
+            .single();
+
+          if (profile) {
+            if (profile.status === 'Pending') {
+              return {
+                success: false,
+                status: 'Pending',
+                error: 'Your account is under review by a family administrator.',
+              };
+            }
+            if (profile.status === 'Suspended') {
+              return {
+                success: false,
+                status: 'Suspended',
+                error: 'This account has been suspended by a family administrator.',
+              };
+            }
+
+            setCurrentUser(profile);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('obeff_session_email', profile.email);
+            }
+            return { success: true };
+          }
+        } else if (authError && authError.message !== 'Invalid login credentials') {
+          return { success: false, error: authError.message };
+        }
+      } catch (e) {
+        console.warn('Supabase sign-in notice, checking local profiles:', e);
+      }
+    }
+
+    // 2. Fallback to local / preview profiles
+    const user = profiles.find((p) => p.email.toLowerCase() === trimmedEmail);
     if (!user) {
       return { success: false, error: 'No account found with this email address. Please register.' };
     }
@@ -1045,6 +1283,10 @@ export function FamilyProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('obeff_session_email');
+    }
+    const supabase = createClient();
+    if (supabase) {
+      supabase.auth.signOut().catch(() => {});
     }
     if (profiles.length > 0) {
       // Set to first active member
